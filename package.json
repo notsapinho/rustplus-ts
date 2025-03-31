@@ -40,12 +40,12 @@
         "team chat"
     ],
     "dependencies": {
-        "@protobuf-ts/plugin": "^2.9.4",
-        "@types/ws": "^8.5.10",
+        "@protobuf-ts/plugin": "^2.9.6",
+        "@types/ws": "^8.18.0",
         "jimp": "^1.6.0",
         "ts-node": "^10.9.2",
-        "typescript": "^5.4.3",
-        "ws": "^8.16.0"
+        "typescript": "^5.8.2",
+        "ws": "^8.18.1"
     },
     "devDependencies": {
         "dotenv": "^16.4.5"
