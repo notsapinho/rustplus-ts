@@ -20,1130 +20,2144 @@
 
 'use strict'
 
+import { Logger } from 'winston';
+
 import * as rpi from './interfaces/rustplus';
 import * as rp from './rustplus';
+
+/**
+ * Validation Utils
+ */
+
+type ValidationError = { key: string; value: unknown; expected: unknown };
+
+function getTypeOf(value: unknown): string {
+    return value === null ? 'null' : typeof value;
+}
+
+function isType(value: unknown, ...types: (string | null | undefined)[]): boolean {
+    return types.some(type =>
+        (type === null && value === null) || (type === undefined && value === undefined) || (typeof value === type)
+    );
+}
+
+function validateType(key: string, value: unknown, ...types: (string | null | undefined)[]):
+    ValidationError | null {
+    if (!isType(value, ...types)) {
+        return { key: key, value: getTypeOf(value), expected: types }
+    }
+    return null;
+}
+
+function validateInterface(key: string, value: unknown, logger: Logger | null = null,
+    validationCallback: (input: unknown, logger: Logger | null) => boolean): ValidationError | null {
+    if (!validationCallback(value, logger)) {
+        return { key: key, value: value, expected: 'unknown' }
+    }
+
+    return null;
+}
+
+function validateArrayOfInterfaces(key: string, value: unknown, logger: Logger | null = null,
+    validationCallback: (input: unknown, logger: Logger | null) => boolean): ValidationError | null {
+    if (!Array.isArray(value)) {
+        return { key: key, value: getTypeOf(value), expected: 'Array of interfaces' };
+    }
+
+    const errors = value.map((item, index) => {
+        const isValid = validationCallback(item, logger);
+        return isValid ? null : 'Invalid';
+    }).filter(error => error !== null) as string[];
+
+    if (errors.length > 0) {
+        return { key, value: 'unknown', expected: 'Array of interfaces' };
+    }
+
+    return null;
+}
+
+function validateArrayOfTypes(key: string, value: unknown, ...types: (string | null | undefined)[]):
+    ValidationError | null {
+    if (!Array.isArray(value)) {
+        return { key: key, value: getTypeOf(value), expected: `Array of types ${types.join(', ')}` };
+    }
+
+    /* Loop through each element in the array and check if its type is in the allowed types */
+    for (const item of value) {
+        let isValid = false;
+        for (const type of types) {
+            if (isType(item, type)) {
+                isValid = true;
+                break;
+            }
+        }
+
+        if (!isValid) {
+            /* If an invalid element is found, return the error */
+            return { key: key, value: getTypeOf(item), expected: `Array of types ${types.join(', ')}` };
+        }
+    }
+
+    return null;
+}
+
+function validateObjectOfInterfaces(key: string, value: unknown, logger: Logger | null = null,
+    validationCallback: (input: unknown, logger: Logger | null) => boolean): ValidationError | null {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return { key: key, value: getTypeOf(value), expected: 'Object of interfaces' };
+    }
+
+    for (const [objKey, objValue] of Object.entries(value)) {
+        if (typeof objKey !== 'string' || typeof objValue !== 'object' || objValue === null || Array.isArray(objValue) || !validationCallback(objValue, logger)) {
+            return { key: key, value: 'unknown', expected: 'Object of interfaces' };
+        }
+    }
+
+    return null;
+}
+
+function validateNestedObjectOfInterfaces(key: string, value: unknown, logger: Logger | null = null,
+    validationCallback: (input: unknown, logger: Logger | null) => boolean): ValidationError | null {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return { key: key, value: getTypeOf(value), expected: 'Nested object of interfaces' };
+    }
+
+    for (const [keyOuter, valueOuter] of Object.entries(value)) {
+        if (typeof keyOuter !== 'string' || typeof valueOuter !== 'object' || valueOuter === null ||
+            Array.isArray(valueOuter)) {
+            return { key: key, value: getTypeOf(valueOuter), expected: 'Outer nested object of interfaces' };
+        }
+
+        for (const [keyInner, valueInner] of Object.entries(valueOuter)) {
+            if (typeof keyInner !== 'string' || typeof valueInner !== 'object' || valueInner === null ||
+                Array.isArray(valueInner) || !validationCallback(valueInner, logger)) {
+                return { key: key, value: 'unknown', expected: 'Inner nested object of interfaces' };
+            }
+        }
+    }
+
+    return null;
+}
+
+function validateObjectOfTypes(key: string, value: unknown, ...types: (string | null | undefined)[]):
+    ValidationError | null {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return { key: key, value: getTypeOf(value), expected: `Object of types ${types.join(', ')}` };
+    }
+
+    for (const [objKey, objValue] of Object.entries(value)) {
+        if (typeof objKey !== 'string') {
+            return { key: key, value: `objKey: ${typeof objKey}`, expected: `Object of types ${types.join(', ')}` };
+        }
+
+        let isValid = false;
+        for (const type of types) {
+            if (isType(objValue, type)) {
+                isValid = true;
+                break;
+            }
+        }
+
+        if (!isValid) {
+            return { key: key, value: `objValue: ${typeof objValue}`, expected: `Object of types ${types.join(', ')}` };
+        }
+    }
+
+    return null;
+}
+
+function validateUint8Array(key: string, value: unknown): ValidationError | null {
+    if (!(value instanceof Uint8Array)) {
+        return { key, value: getTypeOf(value), expected: 'Uint8Array' };
+    }
+    return null;
+}
+
+function logValidations(interfaceName: string, errors: ValidationError[], unknownKeys: string[],
+    logger: Logger | null = null) {
+    const functionName = `isValid${interfaceName}`;
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    const logError = logger ? logger.error.bind(logger) : console.error;
+
+    if (errors.length !== 0 || !hasOnlyValidKeys) {
+        logError(`[${functionName}] Invalid ${interfaceName} object.`);
+        if (errors.length !== 0) {
+            errors.forEach(error => {
+                logError(`[${functionName}] Key: ${error.key}, Value: ${error.value}, ` +
+                    `Expected: ${error.expected}.`);
+            });
+        }
+        if (!hasOnlyValidKeys) {
+            logError(`[${functionName}] Unknown keys: ${unknownKeys.join(', ')}.`);
+        }
+    }
+}
+
 
 /**
  * Validation checks for the rustplus.proto file interfaces and enums.
  */
 
-export function isValidVector2(object: any): object is rpi.Vector2 {
-    if (typeof object !== 'object' || object === null) {
+export function isValidVector2(object: unknown, logger: Logger | null = null): object is rpi.Vector2 {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidX = object.x === undefined || typeof object.x === 'number';
-    const hasValidY = object.y === undefined || typeof object.y === 'number';
+    const obj = object as rpi.Vector2;
 
+    const interfaceName = 'Vector2';
     const validKeys = [
-        'x', 'y'
+        'x',
+        'y'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidX && hasValidY && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidVector3(object: any): object is rpi.Vector3 {
-    if (typeof object !== 'object' || object === null) {
+export function isValidVector3(object: unknown, logger: Logger | null = null): object is rpi.Vector3 {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidX = object.x === undefined || typeof object.x === 'number';
-    const hasValidY = object.y === undefined || typeof object.y === 'number';
-    const hasValidZ = object.z === undefined || typeof object.z === 'number';
+    const obj = object as rpi.Vector3;
 
+    const interfaceName = 'Vector3';
     const validKeys = [
-        'x', 'y', 'z'
+        'x',
+        'y',
+        'z'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidX && hasValidY && hasValidZ && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('z', obj.z, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidVector4(object: any): object is rpi.Vector4 {
-    if (typeof object !== 'object' || object === null) {
+export function isValidVector4(object: unknown, logger: Logger | null = null): object is rpi.Vector4 {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidX = object.x === undefined || typeof object.x === 'number';
-    const hasValidY = object.y === undefined || typeof object.y === 'number';
-    const hasValidZ = object.z === undefined || typeof object.z === 'number';
-    const hasValidW = object.w === undefined || typeof object.w === 'number';
+    const obj = object as rpi.Vector4;
 
+    const interfaceName = 'Vector4';
     const validKeys = [
-        'x', 'y', 'z', 'w'
+        'x',
+        'y',
+        'z',
+        'w'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidX && hasValidY && hasValidZ && hasValidW && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('z', obj.z, 'number'));
+    errors.push(validateType('w', obj.w, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidHalf3(object: any): object is rpi.Half3 {
-    if (typeof object !== 'object' || object === null) {
+export function isValidHalf3(object: unknown, logger: Logger | null = null): object is rpi.Half3 {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidX = object.x === undefined || typeof object.x === 'number';
-    const hasValidY = object.y === undefined || typeof object.y === 'number';
-    const hasValidZ = object.z === undefined || typeof object.z === 'number';
+    const obj = object as rpi.Half3;
 
+    const interfaceName = 'Half3';
     const validKeys = [
-        'x', 'y', 'z'
+        'x',
+        'y',
+        'z'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidX && hasValidY && hasValidZ && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('z', obj.z, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidColor(object: any): object is rpi.Color {
-    if (typeof object !== 'object' || object === null) {
+export function isValidColor(object: unknown, logger: Logger | null = null): object is rpi.Color {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidR = object.r === undefined || typeof object.r === 'number';
-    const hasValidG = object.g === undefined || typeof object.g === 'number';
-    const hasValidB = object.b === undefined || typeof object.b === 'number';
-    const hasValidA = object.a === undefined || typeof object.a === 'number';
+    const obj = object as rpi.Color;
 
+    const interfaceName = 'Color';
     const validKeys = [
-        'r', 'g', 'b', 'a'
+        'r',
+        'g',
+        'b',
+        'a'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidR && hasValidG && hasValidB && hasValidA && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('r', obj.r, 'number'));
+    errors.push(validateType('g', obj.g, 'number'));
+    errors.push(validateType('b', obj.b, 'number'));
+    errors.push(validateType('a', obj.a, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidRay(object: any): object is rpi.Ray {
-    if (typeof object !== 'object' || object === null) {
+export function isValidRay(object: unknown, logger: Logger | null = null): object is rpi.Ray {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidOrigin = object.origin === undefined || isValidVector3(object.origin);
-    const hasValidDirection = object.direction === undefined || isValidVector3(object.direction);
+    const obj = object as rpi.Ray;
 
+    const interfaceName = 'Ray';
     const validKeys = [
-        'origin', 'direction'
+        'origin',
+        'direction'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidOrigin && hasValidDirection && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(Object.hasOwn(obj, 'origin') ?
+        validateInterface('origin', obj.origin, logger, isValidVector3) : null);
+    errors.push(Object.hasOwn(obj, 'direction') ?
+        validateInterface('direction', obj.direction, logger, isValidVector3) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanActionResult(object: any): object is rpi.ClanActionResult {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanActionResult(object: unknown, logger: Logger | null = null): object is rpi.ClanActionResult {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidRequestId = typeof object.requestId === 'number';
-    const hasValidResult = typeof object.result === 'number';
-    const hasValidHasClanInfo = typeof object.hasClanInfo === 'boolean';
-    const hasValidClanInfo = object.clanInfo === undefined || isValidClanInfo(object.clanInfo);
+    const obj = object as rpi.ClanActionResult;
 
+    const interfaceName = 'ClanActionResult';
     const validKeys = [
-        'requestId', 'result', 'hasClanInfo', 'clanInfo'
+        'requestId',
+        'result',
+        'hasClanInfo',
+        'clanInfo'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidRequestId && hasValidResult && hasValidHasClanInfo && hasValidClanInfo && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('requestId', obj.requestId, 'number'));
+    errors.push(validateType('result', obj.result, 'number'));
+    errors.push(validateType('hasClanInfo', obj.hasClanInfo, 'boolean'));
+    errors.push(Object.hasOwn(obj, 'clanInfo') ?
+        validateInterface('clanInfo', obj.clanInfo, logger, isValidClanInfo) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanInfo(object: any): object is rpi.ClanInfo {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanInfo(object: unknown, logger: Logger | null = null): object is rpi.ClanInfo {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidClanId = typeof object.clanId === 'string';
-    const hasValidName = typeof object.name === 'string';
-    const hasValidCreated = typeof object.created === 'string';
-    const hasValidCreator = typeof object.creator === 'string';
-    const hasValidMotd = object.motd === undefined || typeof object.motd === 'string';
-    const hasValidMotdTimestamp = typeof object.motdTimestamp === 'string';
-    const hasValidMotdAuthor = typeof object.motdAuthor === 'string';
-    const hasValidLogo = object.logo === undefined || object.logo instanceof Uint8Array;
-    const hasValidColor = typeof object.color === 'number';
-    const hasValidRoles = Array.isArray(object.roles) && object.roles.every(isValidClanInfo_Role);
-    const hasValidMembers = Array.isArray(object.members) && object.members.every(isValidClanInfo_Member);
-    const hasValidInvites = Array.isArray(object.invites) && object.invites.every(isValidClanInfo_Invite);
-    const hasValidMaxMemberCount = typeof object.maxMemberCount === 'number';
-    const hasValidScore = typeof object.score === 'string';
+    const obj = object as rpi.ClanInfo;
 
+    const interfaceName = 'ClanInfo';
     const validKeys = [
-        'clanId', 'name', 'created', 'creator', 'motd', 'motdTimestamp', 'motdAuthor', 'logo', 'color', 'roles',
-        'members', 'invites', 'maxMemberCount', 'score'
+        'clanId',
+        'name',
+        'created',
+        'creator',
+        'motd',
+        'motdTimestamp',
+        'motdAuthor',
+        'logo',
+        'color',
+        'roles',
+        'members',
+        'invites',
+        'maxMemberCount',
+        'score'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidClanId && hasValidName && hasValidCreated && hasValidCreator && hasValidMotd &&
-        hasValidMotdTimestamp && hasValidMotdAuthor && hasValidLogo && hasValidColor && hasValidRoles &&
-        hasValidMembers && hasValidInvites && hasValidMaxMemberCount && hasValidScore && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('clanId', obj.clanId, 'string'));
+    errors.push(validateType('name', obj.name, 'string'));
+    errors.push(validateType('created', obj.created, 'string'));
+    errors.push(validateType('creator', obj.creator, 'string'));
+    errors.push(validateType('motd', obj.motd, 'string', undefined));
+    errors.push(validateType('motdTimestamp', obj.motdTimestamp, 'string'));
+    errors.push(validateType('motdAuthor', obj.motdAuthor, 'string'));
+    errors.push(Object.hasOwn(obj, 'logo') ? validateUint8Array('logo', obj.logo) : null);
+    errors.push(validateType('color', obj.color, 'number'));
+    errors.push(validateArrayOfInterfaces('roles', obj.roles, logger, isValidClanInfo_Role));
+    errors.push(validateArrayOfInterfaces('members', obj.members, logger, isValidClanInfo_Member));
+    errors.push(validateArrayOfInterfaces('invites', obj.invites, logger, isValidClanInfo_Invite));
+    errors.push(validateType('maxMemberCount', obj.maxMemberCount, 'number', undefined));
+    errors.push(validateType('score', obj.score, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanInfo_Role(object: any): object is rpi.ClanInfo_Role {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanInfo_Role(object: unknown, logger: Logger | null = null): object is rpi.ClanInfo_Role {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidRoleId = typeof object.roleId === 'number';
-    const hasValidRank = typeof object.rank === 'number';
-    const hasValidName = typeof object.name === 'string';
-    const hasValidCanSetMotd = typeof object.canSetMotd === 'boolean';
-    const hasValidCanSetLogo = typeof object.canSetLogo === 'boolean';
-    const hasValidCanInvite = typeof object.canInvite === 'boolean';
-    const hasValidCanKick = typeof object.canKick === 'boolean';
-    const hasValidCanPromote = typeof object.canPromote === 'boolean';
-    const hasValidCanDemote = typeof object.canDemote === 'boolean';
-    const hasValidCanSetPlayerNotes = typeof object.canSetPlayerNotes === 'boolean';
-    const hasValidCanAccessLogs = typeof object.canAccessLogs === 'boolean';
-    const hasValidCanAccessScoreEvents = typeof object.canAccessScoreEvents === 'boolean';
+    const obj = object as rpi.ClanInfo_Role;
 
+    const interfaceName = 'ClanInfo_Role';
     const validKeys = [
-        'roleId', 'rank', 'name', 'canSetMotd', 'canSetLogo', 'canInvite', 'canKick', 'canPromote', 'canDemote',
-        'canSetPlayerNotes', 'canAccessLogs', 'canAccessScoreEvents'
+        'roleId',
+        'rank',
+        'name',
+        'canSetMotd',
+        'canSetLogo',
+        'canInvite',
+        'canKick',
+        'canPromote',
+        'canDemote',
+        'canSetPlayerNotes',
+        'canAccessLogs',
+        'canAccessScoreEvents'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidRoleId && hasValidRank && hasValidName && hasValidCanSetMotd && hasValidCanSetLogo &&
-        hasValidCanInvite && hasValidCanKick && hasValidCanPromote && hasValidCanDemote && hasValidCanSetPlayerNotes &&
-        hasValidCanAccessLogs && hasValidCanAccessScoreEvents && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('roleId', obj.roleId, 'number'));
+    errors.push(validateType('rank', obj.rank, 'number'));
+    errors.push(validateType('name', obj.name, 'string'));
+    errors.push(validateType('canSetMotd', obj.canSetMotd, 'boolean'));
+    errors.push(validateType('canSetLogo', obj.canSetLogo, 'boolean'));
+    errors.push(validateType('canInvite', obj.canInvite, 'boolean'));
+    errors.push(validateType('canKick', obj.canKick, 'boolean'));
+    errors.push(validateType('canPromote', obj.canPromote, 'boolean'));
+    errors.push(validateType('canDemote', obj.canDemote, 'boolean'));
+    errors.push(validateType('canSetPlayerNotes', obj.canSetPlayerNotes, 'boolean'));
+    errors.push(validateType('canAccessLogs', obj.canAccessLogs, 'boolean'));
+    errors.push(validateType('canAccessScoreEvents', obj.canAccessScoreEvents, 'boolean'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanInfo_Member(object: any): object is rpi.ClanInfo_Member {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanInfo_Member(object: unknown, logger: Logger | null = null): object is rpi.ClanInfo_Member {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidSteamId = typeof object.steamId === 'string';
-    const hasValidRoleId = typeof object.roleId === 'number';
-    const hasValidJoined = typeof object.joined === 'string';
-    const hasValidLastSeen = typeof object.lastSeen === 'string';
-    const hasValidNotes = object.notes === undefined || typeof object.notes === 'string';
-    const hasValidOnline = typeof object.online === 'boolean';
+    const obj = object as rpi.ClanInfo_Member;
 
+    const interfaceName = 'ClanInfo_Member';
     const validKeys = [
-        'steamId', 'roleId', 'joined', 'lastSeen', 'notes', 'online'
+        'steamId',
+        'roleId',
+        'joined',
+        'lastSeen',
+        'notes',
+        'online'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidSteamId && hasValidRoleId && hasValidJoined && hasValidLastSeen && hasValidNotes &&
-        hasValidOnline && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+    errors.push(validateType('roleId', obj.roleId, 'number'));
+    errors.push(validateType('joined', obj.joined, 'string'));
+    errors.push(validateType('lastSeen', obj.lastSeen, 'string'));
+    errors.push(validateType('notes', obj.notes, 'string', undefined));
+    errors.push(validateType('online', obj.online, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanInfo_Invite(object: any): object is rpi.ClanInfo_Invite {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanInfo_Invite(object: unknown, logger: Logger | null = null): object is rpi.ClanInfo_Invite {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidSteamId = typeof object.steamId === 'string';
-    const hasValidRecruiter = typeof object.recruiter === 'string';
-    const hasValidTimestamp = typeof object.timestamp === 'string';
+    const obj = object as rpi.ClanInfo_Invite;
 
+    const interfaceName = 'ClanInfo_Invite';
     const validKeys = [
-        'steamId', 'recruiter', 'timestamp'
+        'steamId',
+        'recruiter',
+        'timestamp'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidSteamId && hasValidRecruiter && hasValidTimestamp && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+    errors.push(validateType('recruiter', obj.recruiter, 'string'));
+    errors.push(validateType('timestamp', obj.timestamp, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanLog(object: any): object is rpi.ClanLog {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanLog(object: unknown, logger: Logger | null = null): object is rpi.ClanLog {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidClanId = typeof object.clanId === 'string';
-    const hasValidLogEntries = Array.isArray(object.logEntries) && object.logEntries.every(isValidClanLog_Entry);
+    const obj = object as rpi.ClanLog;
 
+    const interfaceName = 'ClanLog';
     const validKeys = [
-        'clanId', 'logEntries'
+        'clanId',
+        'logEntries'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidClanId && hasValidLogEntries && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('clanId', obj.clanId, 'string'));
+    errors.push(validateArrayOfInterfaces('logEntries', obj.logEntries, logger, isValidClanLog_Entry));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanLog_Entry(object: any): object is rpi.ClanLog_Entry {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanLog_Entry(object: unknown, logger: Logger | null = null): object is rpi.ClanLog_Entry {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidTimestamp = typeof object.timestamp === 'string';
-    const hasValidEventKey = typeof object.eventKey === 'string';
-    const hasValidArg1 = object.arg1 === undefined || typeof object.arg1 === 'string';
-    const hasValidArg2 = object.arg2 === undefined || typeof object.arg2 === 'string';
-    const hasValidArg3 = object.arg3 === undefined || typeof object.arg3 === 'string';
-    const hasValidArg4 = object.arg4 === undefined || typeof object.arg4 === 'string';
+    const obj = object as rpi.ClanLog_Entry;
 
+    const interfaceName = 'ClanLog_Entry';
     const validKeys = [
-        'timestamp', 'eventKey', 'arg1', 'arg2', 'arg3', 'arg4'
+        'timestamp',
+        'eventKey',
+        'arg1',
+        'arg2',
+        'arg3',
+        'arg4'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidTimestamp && hasValidEventKey && hasValidArg1 && hasValidArg2 && hasValidArg3 && hasValidArg4 &&
-        hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('timestamp', obj.timestamp, 'string'));
+    errors.push(validateType('eventKey', obj.eventKey, 'string'));
+    errors.push(validateType('arg1', obj.arg1, 'string', undefined));
+    errors.push(validateType('arg2', obj.arg2, 'string', undefined));
+    errors.push(validateType('arg3', obj.arg3, 'string', undefined));
+    errors.push(validateType('arg4', obj.arg4, 'string', undefined));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanInvitations(object: any): object is rpi.ClanInvitations {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanInvitations(object: unknown, logger: Logger | null = null): object is rpi.ClanInvitations {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidInvitations = Array.isArray(object.invitations) &&
-        object.invitations.every(isValidClanInvitations_Invitation);
+    const obj = object as rpi.ClanInvitations;
 
+    const interfaceName = 'ClanInvitations';
     const validKeys = [
         'invitations'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidInvitations && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateArrayOfInterfaces('invitations', obj.invitations, logger, isValidClanInvitations_Invitation));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidClanInvitations_Invitation(object: any): object is rpi.ClanInvitations_Invitation {
-    if (typeof object !== 'object' || object === null) {
+export function isValidClanInvitations_Invitation(object: unknown, logger: Logger | null = null):
+    object is rpi.ClanInvitations_Invitation {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidClanId = typeof object.clanId === 'string';
-    const hasValidRecruiter = typeof object.recruiter === 'string';
-    const hasValidTimestamp = typeof object.timestamp === 'string';
+    const obj = object as rpi.ClanInvitations_Invitation;
 
+    const interfaceName = 'ClanInvitations_Invitation';
     const validKeys = [
-        'clanId', 'recruiter', 'timestamp'
+        'clanId',
+        'recruiter',
+        'timestamp'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidClanId && hasValidRecruiter && hasValidTimestamp && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('clanId', obj.clanId, 'string'));
+    errors.push(validateType('recruiter', obj.recruiter, 'string'));
+    errors.push(validateType('timestamp', obj.timestamp, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppRequest(object: any): object is rpi.AppRequest {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppRequest(object: unknown, logger: Logger | null = null): object is rpi.AppRequest {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidSeq = typeof object.seq === 'number';
-    const hasValidPlayerId = typeof object.playerId === 'string';
-    const hasValidPlayerToken = typeof object.playerToken === 'number';
-    const hasValidEntityId = object.entityId === undefined || typeof object.entityId === 'number';
-    const hasValidGetInfo = object.getInfo === undefined || isValidAppEmpty(object.getInfo);
-    const hasValidGetTime = object.getTime === undefined || isValidAppEmpty(object.getTime);
-    const hasValidGetMap = object.getMap === undefined || isValidAppEmpty(object.getMap);
-    const hasValidGetTeamInfo = object.getTeamInfo === undefined || isValidAppEmpty(object.getTeamInfo);
-    const hasValidGetTeamChat = object.getTeamChat === undefined || isValidAppEmpty(object.getTeamChat);
-    const hasValidSendTeamMessage = object.sendTeamMessage === undefined ||
-        isValidAppSendMessage(object.sendTeamMessage);
-    const hasValidGetEntityInfo = object.getEntityInfo === undefined || isValidAppEmpty(object.getEntityInfo);
-    const hasValidSetEntityValue = object.setEntityValue === undefined ||
-        isValidAppSetEntityValue(object.setEntityValue);
-    const hasValidCheckSubscription = object.checkSubscription === undefined ||
-        isValidAppEmpty(object.checkSubscription);
-    const hasValidSetSubscription = object.setSubscription === undefined || isValidAppFlag(object.setSubscription);
-    const hasValidGetMapMarkers = object.getMapMarkers === undefined || isValidAppEmpty(object.getMapMarkers);
-    const hasValidPromoteToLeader = object.promoteToLeader === undefined ||
-        isValidAppPromoteToLeader(object.promoteToLeader);
-    const hasValidGetClanInfo = object.getClanInfo === undefined || isValidAppEmpty(object.getClanInfo);
-    const hasValidSetClanMotd = object.setClanMotd === undefined || isValidAppSendMessage(object.setClanMotd);
-    const hasValidGetClanChat = object.getClanChat === undefined || isValidAppEmpty(object.getClanChat);
-    const hasValidSendClanMessage = object.sendClanMessage === undefined ||
-        isValidAppSendMessage(object.sendClanMessage);
-    const hasValidGetNexusAuth = object.getNexusAuth === undefined || isValidAppGetNexusAuth(object.getGetNexusAuth);
-    const hasValidCameraSubscribe = object.cameraSubscribe === undefined ||
-        isValidAppCameraSubscribe(object.cameraSubscribe);
-    const hasValidCameraUnsubscribe = object.cameraUnsubscribe === undefined ||
-        isValidAppEmpty(object.cameraUnsubscribe);
-    const hasValidCameraInput = object.cameraInput === undefined || isValidAppCameraInput(object.cameraInput);
+    const obj = object as rpi.AppRequest;
 
+    const interfaceName = 'AppRequest';
     const validKeys = [
-        'seq', 'playerId', 'playerToken', 'entityId', 'getInfo', 'getTime', 'getMap', 'getTeamInfo', 'getTeamChat',
-        'sendTeamMessage', 'getEntityInfo', 'setEntityValue', 'checkSubscription', 'setSubscription', 'getMapMarkers',
-        'promoteToLeader', 'getClanInfo', 'setClanMotd', 'getClanChat', 'sendClanMessage', 'getNexusAuth',
-        'cameraSubscribe', 'cameraUnsubscribe', 'cameraInput'
+        'seq',
+        'playerId',
+        'playerToken',
+        'entityId',
+        'getInfo',
+        'getTime',
+        'getMap',
+        'getTeamInfo',
+        'getTeamChat',
+        'sendTeamMessage',
+        'getEntityInfo',
+        'setEntityValue',
+        'checkSubscription',
+        'setSubscription',
+        'getMapMarkers',
+        'promoteToLeader',
+        'getClanInfo',
+        'setClanMotd',
+        'getClanChat',
+        'sendClanMessage',
+        'getNexusAuth',
+        'cameraSubscribe',
+        'cameraUnsubscribe',
+        'cameraInput'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidSeq && hasValidPlayerId && hasValidPlayerToken && hasValidEntityId && hasValidGetInfo &&
-        hasValidGetTime && hasValidGetMap && hasValidGetTeamInfo && hasValidGetTeamChat && hasValidSendTeamMessage &&
-        hasValidGetEntityInfo && hasValidSetEntityValue && hasValidCheckSubscription && hasValidSetSubscription &&
-        hasValidGetMapMarkers && hasValidPromoteToLeader && hasValidGetClanInfo && hasValidSetClanMotd &&
-        hasValidGetClanChat && hasValidSendClanMessage && hasValidGetNexusAuth && hasValidCameraSubscribe &&
-        hasValidCameraUnsubscribe && hasValidCameraInput && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('seq', obj.seq, 'number'));
+    errors.push(validateType('playerId', obj.playerId, 'string'));
+    errors.push(validateType('playerToken', obj.playerToken, 'number'));
+    errors.push(validateType('entityId', obj.entityId, 'number', undefined));
+    errors.push(Object.hasOwn(obj, 'getInfo') ?
+        validateInterface('getInfo', obj.getInfo, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'getTime') ?
+        validateInterface('getTime', obj.getTime, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'getMap') ?
+        validateInterface('getMap', obj.getMap, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'getTeamInfo') ?
+        validateInterface('getTeamInfo', obj.getTeamInfo, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'getTeamChat') ?
+        validateInterface('getTeamChat', obj.getTeamChat, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'sendTeamMessage') ?
+        validateInterface('sendTeamMessage', obj.sendTeamMessage, logger, isValidAppSendMessage) : null);
+    errors.push(Object.hasOwn(obj, 'getEntityInfo') ?
+        validateInterface('getEntityInfo', obj.getEntityInfo, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'setEntityValue') ?
+        validateInterface('setEntityValue', obj.setEntityValue, logger, isValidAppSetEntityValue) : null);
+    errors.push(Object.hasOwn(obj, 'checkSubscription') ?
+        validateInterface('checkSubscription', obj.checkSubscription, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'setSubscription') ?
+        validateInterface('setSubscription', obj.setSubscription, logger, isValidAppFlag) : null);
+    errors.push(Object.hasOwn(obj, 'getMapMarkers') ?
+        validateInterface('getMapMarkers', obj.getMapMarkers, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'promoteToLeader') ?
+        validateInterface('promoteToLeader', obj.promoteToLeader, logger, isValidAppPromoteToLeader) : null);
+    errors.push(Object.hasOwn(obj, 'getClanInfo') ?
+        validateInterface('getClanInfo', obj.getClanInfo, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'setClanMotd') ?
+        validateInterface('setClanMotd', obj.setClanMotd, logger, isValidAppSendMessage) : null);
+    errors.push(Object.hasOwn(obj, 'getClanChat') ?
+        validateInterface('getClanChat', obj.getClanChat, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'sendClanMessage') ?
+        validateInterface('sendClanMessage', obj.sendClanMessage, logger, isValidAppSendMessage) : null);
+    errors.push(Object.hasOwn(obj, 'getNexusAuth') ?
+        validateInterface('getNexusAuth', obj.getNexusAuth, logger, isValidAppGetNexusAuth) : null);
+    errors.push(Object.hasOwn(obj, 'cameraSubscribe') ?
+        validateInterface('cameraSubscribe', obj.cameraSubscribe, logger, isValidAppCameraSubscribe) : null);
+    errors.push(Object.hasOwn(obj, 'cameraUnsubscribe') ?
+        validateInterface('cameraUnsubscribe', obj.cameraUnsubscribe, logger, isValidAppEmpty) : null);
+    errors.push(Object.hasOwn(obj, 'cameraInput') ?
+        validateInterface('cameraInput', obj.cameraInput, logger, isValidAppCameraInfo) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppMessage(object: any): object is rpi.AppMessage {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppEmpty(object: unknown, logger: Logger | null = null): object is rpi.AppEmpty {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidResponse = object.response === undefined || isValidAppResponse(object.response);
-    const hasValidBroadcast = object.broadcast === undefined || isValidAppBroadcast(object.broadcast);
+    const interfaceName = 'AppEmpty';
+    const validKeys: string[] = [];
 
-    const validKeys = [
-        'response', 'broadcast'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
+    const errors: (ValidationError | null)[] = [];
 
-    return hasValidResponse && hasValidBroadcast && hasOnlyValidKeys;
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppResponse(object: any): object is rpi.AppResponse {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppSendMessage(object: unknown, logger: Logger | null = null): object is rpi.AppSendMessage {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidSeq = typeof object.seq === 'number';
-    const hasValidSuccess = object.success === undefined || isValidAppSuccess(object.success);
-    const hasValidError = object.error === undefined || isValidAppError(object.error);
-    const hasValidInfo = object.info === undefined || isValidAppInfo(object.info);
-    const hasValidTime = object.time === undefined || isValidAppTime(object.time);
-    const hasValidMap = object.map === undefined || isValidAppMap(object.map);
-    const hasValidTeamInfo = object.teamInfo === undefined || isValidAppTeamInfo(object.teamInfo);
-    const hasValidTeamChat = object.teamChat === undefined || isValidAppTeamChat(object.teamChat);
-    const hasValidEntityInfo = object.entityInfo === undefined || isValidAppEntityInfo(object.entityInfo);
-    const hasValidFlag = object.flag === undefined || isValidAppFlag(object.flag);
-    const hasValidMapMarkers = object.mapMarkers === undefined || isValidAppMapMarkers(object.mapMarkers);
-    const hasValidClanInfo = object.clanInfo === undefined || isValidAppClanInfo(object.clanInfo);
-    const hasValidClanChat = object.clanChat === undefined || isValidAppClanChat(object.clanChat);
-    const hasValidNexusAuth = object.nexusAuth === undefined || isValidAppNexusAuth(object.nexusAuth);
-    const hasValidCameraSubscribeInfo = object.cameraSubscribeInfo === undefined ||
-        isValidAppCameraInfo(object.cameraSubscribeInfo);
+    const obj = object as rpi.AppSendMessage;
 
-    const validKeys = [
-        'seq', 'success', 'error', 'info', 'time', 'map', 'teamInfo', 'teamChat', 'entityInfo', 'flag', 'mapMarkers',
-        'clanInfo', 'clanChat', 'nexusAuth', 'cameraSubscribeInfo'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidSeq && hasValidSuccess && hasValidError && hasValidInfo && hasValidTime && hasValidMap &&
-        hasValidTeamInfo && hasValidTeamChat && hasValidEntityInfo && hasValidFlag && hasValidMapMarkers &&
-        hasValidClanInfo && hasValidClanChat && hasValidNexusAuth && hasValidCameraSubscribeInfo && hasOnlyValidKeys;
-}
-
-export function isValidAppBroadcast(object: any): object is rpi.AppBroadcast {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidTeamChanged = object.teamChanged === undefined || isValidAppTeamChanged(object.teamChanged);
-    const hasValidTeamMessage = object.teamMessage === undefined || isValidAppNewTeamMessage(object.teamMessage);
-    const hasValidEntityChanged = object.entityChanged === undefined || isValidAppEntityChanged(object.entityChanged);
-    const hasValidClanChanged = object.clanChanged === undefined || isValidAppClanChanged(object.clanChanged);
-    const hasValidClanMessage = object.clanMessage === undefined || isValidAppNewClanMessage(object.clanMessage);
-    const hasValidCameraRays = object.cameraRays === undefined || isValidAppCameraRays(object.cameraRays);
-
-    const validKeys = [
-        'teamChanged', 'teamMessage', 'entityChanged', 'clanChanged', 'clanMessage', 'cameraRays'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidTeamChanged && hasValidTeamMessage && hasValidEntityChanged && hasValidClanChanged &&
-        hasValidClanMessage && hasValidCameraRays && hasOnlyValidKeys;
-}
-
-export function isValidAppEmpty(object: any): object is rpi.AppEmpty {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasOnlyValidKeys = Object.keys(object).length === 0;
-
-    return hasOnlyValidKeys;
-}
-
-export function isValidAppSendMessage(object: any): object is rpi.AppSendMessage {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidMessage = typeof object.message === 'string';
-
+    const interfaceName = 'AppSendMessage';
     const validKeys = [
         'message'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidMessage && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('message', obj.message, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppSetEntityValue(object: any): object is rpi.AppSetEntityValue {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppSetEntityValue(object: unknown, logger: Logger | null = null):
+    object is rpi.AppSetEntityValue {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidValue = typeof object.value === 'boolean';
+    const obj = object as rpi.AppSetEntityValue;
 
+    const interfaceName = 'AppSetEntityValue';
     const validKeys = [
         'value'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidValue && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('value', obj.value, 'boolean'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppPromoteToLeader(object: any): object is rpi.AppPromoteToLeader {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppFlag(object: unknown, logger: Logger | null = null): object is rpi.AppFlag {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidSteamId = typeof object.steamId === 'string';
+    const obj = object as rpi.AppFlag;
 
+    const interfaceName = 'AppFlag';
+    const validKeys = [
+        'value'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('value', obj.value, 'boolean', undefined));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppPromoteToLeader(object: unknown, logger: Logger | null = null):
+    object is rpi.AppPromoteToLeader {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppPromoteToLeader;
+
+    const interfaceName = 'AppPromoteToLeader';
     const validKeys = [
         'steamId'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidSteamId && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppGetNexusAuth(object: any): object is rpi.AppGetNexusAuth {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppGetNexusAuth(object: unknown, logger: Logger | null = null): object is rpi.AppGetNexusAuth {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidAppKey = typeof object.appKey === 'string';
+    const obj = object as rpi.AppGetNexusAuth;
 
+    const interfaceName = 'AppGetNexusAuth';
     const validKeys = [
         'appKey'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidAppKey && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('appKey', obj.appKey, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppSuccess(object: any): object is rpi.AppSuccess {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppCameraSubscribe(object: unknown, logger: Logger | null = null):
+    object is rpi.AppCameraSubscribe {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasOnlyValidKeys = Object.keys(object).length === 0;
+    const obj = object as rpi.AppCameraSubscribe;
 
-    return hasOnlyValidKeys;
-}
-
-export function isValidAppError(object: any): object is rpi.AppError {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidError = typeof object.error === 'string';
-
-    const validKeys = [
-        'error'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidError && hasOnlyValidKeys;
-}
-
-export function isValidAppFlag(object: any): object is rpi.AppFlag {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidValue = typeof object.value === 'boolean';
-
-    const validKeys = [
-        'value'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidValue && hasOnlyValidKeys;
-}
-
-export function isValidAppInfo(object: any): object is rpi.AppInfo {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidName = typeof object.name === 'string';
-    const hasValidHeaderImage = typeof object.headerImage === 'string';
-    const hasValidUrl = typeof object.url === 'string';
-    const hasValidMap = typeof object.map === 'string';
-    const hasValidMapSize = typeof object.mapSize === 'number';
-    const hasValidWipeTime = typeof object.wipeTime === 'number';
-    const hasValidPlayers = typeof object.players === 'number';
-    const hasValidMaxPlayers = typeof object.maxPlayers === 'number';
-    const hasValidQueuedPlayers = typeof object.queuedPlayers === 'number';
-    const hasValidSeed = typeof object.seed === 'number';
-    const hasValidSalt = typeof object.salt === 'number';
-    const hasValidLogoImage = object.logoImage === undefined || typeof object.logoImage === 'string';
-    const hasValidNexus = object.nexus === undefined || typeof object.nexus === 'string';
-    const hasValidNexusId = typeof object.nexusId === 'number';
-    const hasValidNexusZone = object.nexusZone === undefined || typeof object.nexusZone === 'string';
-    const hasValidCamerasEnabled = object.camerasEnabled === undefined || typeof object.camerasEnabled === 'boolean';
-
-    const validKeys = [
-        'name', 'headerImage', 'url', 'map', 'mapSize', 'wipeTime', 'players', 'maxPlayers', 'queuedPlayers', 'seed',
-        'salt', 'logoImage', 'nexus', 'nexusId', 'nexusZone', 'camerasEnabled'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidName && hasValidHeaderImage && hasValidUrl && hasValidMap && hasValidMapSize && hasValidWipeTime &&
-        hasValidPlayers && hasValidMaxPlayers && hasValidQueuedPlayers && hasValidSeed && hasValidSalt &&
-        hasValidLogoImage && hasValidNexus && hasValidNexusId && hasValidNexusZone && hasValidCamerasEnabled &&
-        hasOnlyValidKeys;
-}
-
-export function isValidAppTime(object: any): object is rpi.AppTime {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidDayLengthMinutes = typeof object.dayLengthMinutes === 'number';
-    const hasValidTimeScale = typeof object.timeScale === 'number';
-    const hasValidSunrise = typeof object.sunrise === 'number';
-    const hasValidSunset = typeof object.sunset === 'number';
-    const hasValidTime = typeof object.time === 'number';
-
-    const validKeys = [
-        'dayLengthMinutes', 'timeScale', 'sunrise', 'sunset', 'time'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidDayLengthMinutes && hasValidTimeScale && hasValidSunrise && hasValidSunset && hasValidTime &&
-        hasOnlyValidKeys;
-}
-
-export function isValidAppMap(object: any): object is rpi.AppMap {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidWidth = typeof object.width === 'number';
-    const hasValidHeight = typeof object.height === 'number';
-    const hasValidJpgImage = object.jpgImage instanceof Uint8Array;
-    const hasValidOceanMargin = typeof object.oceanMargin === 'number';
-    const hasValidMonuments = Array.isArray(object.monuments) &&
-        object.monuments.every(isValidAppMap_Monument);
-    const hasValidBackground = object.background === undefined || typeof object.background === 'string';
-
-    const validKeys = [
-        'width', 'height', 'jpgImage', 'oceanMargin', 'monuments', 'background'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidWidth && hasValidHeight && hasValidJpgImage && hasValidOceanMargin && hasValidMonuments &&
-        hasValidBackground && hasOnlyValidKeys;
-}
-
-export function isValidAppMap_Monument(object: any): object is rpi.AppMap_Monument {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidToken = typeof object.token === 'string';
-    const hasValidX = typeof object.x === 'number';
-    const hasValidY = typeof object.y === 'number';
-
-    const validKeys = [
-        'token', 'x', 'y'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidToken && hasValidX && hasValidY && hasOnlyValidKeys;
-}
-
-export function isValidAppEntityInfo(object: any): object is rpi.AppEntityInfo {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidType = isValidAppEntityType(object.type);
-    const hasValidPayload = object.payload === undefined || isValidAppEntityPayload(object.payload);
-
-    const validKeys = [
-        'type', 'payload'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidType && hasValidPayload && hasOnlyValidKeys;
-}
-
-export function isValidAppEntityPayload(object: any): object is rpi.AppEntityPayload {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidValue = typeof object.value === 'boolean';
-    const hasValidItems = Array.isArray(object.items) && object.items.every(isValidAppEntityPayload_Item);
-    const hasValidCapacity = typeof object.capacity === 'number';
-    const hasValidHasProtection = typeof object.hasProtection === 'boolean';
-    const hasValidProtectionExpiry = typeof object.protectionExpiry === 'number';
-
-    const validKeys = [
-        'value', 'items', 'capacity', 'hasProtection', 'protectionExpiry'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidValue && hasValidItems && hasValidCapacity && hasValidHasProtection && hasValidProtectionExpiry &&
-        hasOnlyValidKeys;
-}
-
-export function isValidAppEntityPayload_Item(object: any): object is rpi.AppEntityPayload_Item {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidItemId = typeof object.itemId === 'number';
-    const hasValidQuantity = typeof object.quantity === 'number';
-    const hasValidItemIsBlueprint = typeof object.itemIsBlueprint === 'boolean';
-
-    const validKeys = [
-        'itemId', 'quantity', 'itemIsBlueprint'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidItemId && hasValidQuantity && hasValidItemIsBlueprint && hasOnlyValidKeys;
-}
-
-export function isValidAppTeamInfo(object: any): object is rpi.AppTeamInfo {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidLeaderSteamId = typeof object.leaderSteamId === 'string';
-    const hasValidMembers = Array.isArray(object.members) && object.members.every(isValidAppTeamInfo_Member);
-    const hasValidMapNotes = Array.isArray(object.mapNotes) && object.mapNotes.every(isValidAppTeamInfo_Note);
-    const hasValidLeaderMapNotes = Array.isArray(object.leaderMapNotes) &&
-        object.leaderMapNotes.every(isValidAppTeamInfo_Note);
-
-    const validKeys = [
-        'leaderSteamId', 'members', 'mapNotes', 'leaderMapNotes'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidLeaderSteamId && hasValidMembers && hasValidMapNotes && hasValidLeaderMapNotes && hasOnlyValidKeys;
-}
-
-export function isValidAppTeamInfo_Member(object: any): object is rpi.AppTeamInfo_Member {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidSteamId = typeof object.steamId === 'string';
-    const hasValidName = typeof object.name === 'string';
-    const hasValidX = typeof object.x === 'number';
-    const hasValidY = typeof object.y === 'number';
-    const hasValidIsOnline = typeof object.isOnline === 'boolean';
-    const hasValidSpawnTime = typeof object.spawnTime === 'number';
-    const hasValidIsAlive = typeof object.isAlive === 'boolean';
-    const hasValidDeathTime = typeof object.deathTime === 'number';
-
-    const validKeys = [
-        'steamId', 'name', 'x', 'y', 'isOnline', 'spawnTime', 'isAlive', 'deathTime'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidSteamId && hasValidName && hasValidX && hasValidY && hasValidIsOnline && hasValidSpawnTime &&
-        hasValidIsAlive && hasValidDeathTime && hasOnlyValidKeys;
-}
-
-export function isValidAppTeamInfo_Note(object: any): object is rpi.AppTeamInfo_Note {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidType = isValidAppTeamInfo_Note_Type(object.type);
-    const hasValidX = typeof object.x === 'number';
-    const hasValidY = typeof object.y === 'number';
-    const hasValidIcon = object.icon === undefined || typeof object.icon === 'number';
-    const hasValidcolourIndex = object.colourIndex === undefined || typeof object.colourIndex === 'number';
-    const hasValidLabel = object.label === undefined || typeof object.label === 'string';
-
-    const validKeys = [
-        'type', 'x', 'y', 'icon', 'colourIndex', 'label'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidType && hasValidX && hasValidY && hasValidIcon && hasValidcolourIndex && hasValidLabel &&
-        hasOnlyValidKeys;
-}
-
-export function isValidAppTeamMessage(object: any): object is rpi.AppTeamMessage {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidSteamId = typeof object.steamId === 'string';
-    const hasValidName = typeof object.name === 'string';
-    const hasValidMessage = typeof object.message === 'string';
-    const hasValidColor = typeof object.color === 'string';
-    const hasValidTime = typeof object.time === 'number';
-
-    const validKeys = [
-        'steamId', 'name', 'message', 'color', 'time'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidSteamId && hasValidName && hasValidMessage && hasValidColor && hasValidTime && hasOnlyValidKeys;
-}
-
-export function isValidAppTeamChat(object: any): object is rpi.AppTeamChat {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidMessages = Array.isArray(object.messages) && object.messages.every(isValidAppTeamMessage);
-
-    const validKeys = [
-        'messages'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidMessages && hasOnlyValidKeys;
-}
-
-export function isValidAppMarker(object: any): object is rpi.AppMarker {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidId = typeof object.id === 'number';
-    const hasValidType = isValidAppMarkerType(object.type);
-    const hasValidX = typeof object.x === 'number';
-    const hasValidY = typeof object.y === 'number';
-    const hasValidSteamId = typeof object.steamId === 'string';
-    const hasValidRotation = typeof object.rotation === 'number';
-    const hasValidRadius = typeof object.radius === 'number';
-    const hasValidColor1 = object.color1 === undefined || isValidVector4(object.color1);
-    const hasValidColor2 = object.color2 === undefined || isValidVector4(object.color2);
-    const hasValidAlpha = typeof object.alpha === 'number';
-    const hasValidName = object.name === undefined || typeof object.name === 'string';
-    const hasValidOutOfStock = typeof object.outOfStock === 'boolean';
-    const hasValidSellOrders = Array.isArray(object.sellOrders) && object.sellOrders.every(isValidAppMarker_SellOrder);
-
-    const validKeys = [
-        'id', 'type', 'x', 'y', 'steamId', 'rotation', 'radius', 'color1', 'color2', 'alpha', 'name', 'outOfStock',
-        'sellOrders'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidId && hasValidType && hasValidX && hasValidY && hasValidSteamId && hasValidRotation &&
-        hasValidRadius && hasValidColor1 && hasValidColor2 && hasValidAlpha && hasValidName && hasValidOutOfStock &&
-        hasValidSellOrders && hasOnlyValidKeys;
-}
-
-export function isValidAppMarker_SellOrder(object: any): object is rpi.AppMarker_SellOrder {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidItemId = typeof object.itemId === 'number';
-    const hasValidQuantity = typeof object.quantity === 'number';
-    const hasValidCurrencyId = typeof object.currencyId === 'number';
-    const hasValidCostPerItem = typeof object.costPerItem === 'number';
-    const hasValidAmountInStock = typeof object.amountInStock === 'number';
-    const hasValidItemIsBlueprint = typeof object.itemIsBlueprint === 'boolean';
-    const hasValidCurrencyIsBlueprint = typeof object.currencyIsBlueprint === 'boolean';
-    const hasValidItemCondition = typeof object.itemCondition === 'number';
-    const hasValidItemConditionMax = typeof object.itemConditionMax === 'number';
-    const hasValidPriceMultiplier = object.priceMultiplier === undefined || typeof object.priceMultiplier === 'number';
-
-    const validKeys = [
-        'itemId', 'quantity', 'currencyId', 'costPerItem', 'amountInStock', 'itemIsBlueprint', 'currencyIsBlueprint',
-        'itemCondition', 'itemConditionMax', 'priceMultiplier'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidItemId && hasValidQuantity && hasValidCurrencyId && hasValidCostPerItem && hasValidAmountInStock &&
-        hasValidItemIsBlueprint && hasValidCurrencyIsBlueprint && hasValidItemCondition && hasValidItemConditionMax &&
-        hasValidPriceMultiplier && hasOnlyValidKeys;
-}
-
-export function isValidAppMapMarkers(object: any): object is rpi.AppMapMarkers {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidMarkers = Array.isArray(object.markers) && object.markers.every(isValidAppMarker);
-
-    const validKeys = [
-        'markers'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidMarkers && hasOnlyValidKeys;
-}
-
-export function isValidAppClanInfo(object: any): object is rpi.AppClanInfo {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidClanInfo = object.clanInfo === undefined || isValidClanInfo(object.clanInfo);
-
-    const validKeys = [
-        'clanInfo'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidClanInfo && hasOnlyValidKeys;
-}
-
-export function isValidAppClanMessage(object: any): object is rpi.AppClanMessage {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidSteamId = typeof object.steamId === 'string';
-    const hasValidName = typeof object.name === 'string';
-    const hasValidMessage = typeof object.message === 'string';
-    const hasValidTime = typeof object.time === 'string';
-
-    const validKeys = [
-        'steamId', 'name', 'message', 'time'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidSteamId && hasValidName && hasValidMessage && hasValidTime && hasOnlyValidKeys;
-}
-
-export function isValidAppClanChat(object: any): object is rpi.AppClanChat {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidMessages = Array.isArray(object.messages) && object.messages.every(isValidAppClanMessage);
-
-    const validKeys = [
-        'messages'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidMessages && hasOnlyValidKeys;
-}
-
-export function isValidAppNexusAuth(object: any): object is rpi.AppNexusAuth {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidServerId = typeof object.serverId === 'string';
-    const hasValidPlayerToken = typeof object.playerToken === 'number';
-
-    const validKeys = [
-        'serverId', 'playerToken'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidServerId && hasValidPlayerToken && hasOnlyValidKeys;
-}
-
-export function isValidAppTeamChanged(object: any): object is rpi.AppTeamChanged {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidPlayerId = typeof object.playerId === 'string';
-    const hasValidTeamInfo = object.teamInfo === undefined || isValidAppTeamInfo(object.teamInfo);
-
-    const validKeys = [
-        'playerId', 'teamInfo'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidPlayerId && hasValidTeamInfo && hasOnlyValidKeys;
-}
-
-export function isValidAppNewTeamMessage(object: any): object is rpi.AppNewTeamMessage {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidMessage = object.message === undefined || isValidAppTeamMessage(object.message);
-
-    const validKeys = [
-        'message'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidMessage && hasOnlyValidKeys;
-}
-
-export function isValidAppEntityChanged(object: any): object is rpi.AppEntityChanged {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidEntityId = typeof object.entityId === 'number';
-    const hasValidPayload = object.payload === undefined || isValidAppEntityPayload(object.payload);
-
-    const validKeys = [
-        'entityId', 'payload'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidEntityId && hasValidPayload && hasOnlyValidKeys;
-}
-
-export function isValidAppClanChanged(object: any): object is rpi.AppClanChanged {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidClanInfo = object.clanInfo === undefined || isValidClanInfo(object.clanInfo);
-
-    const validKeys = [
-        'clanInfo'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidClanInfo && hasOnlyValidKeys;
-}
-
-export function isValidAppNewClanMessage(object: any): object is rpi.AppNewClanMessage {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidClanId = typeof object.clanId === 'string';
-    const hasValidMessage = object.message === undefined || isValidAppClanMessage(object.message);
-
-    const validKeys = [
-        'clanId', 'message'
-    ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
-
-    return hasValidClanId && hasValidMessage && hasOnlyValidKeys;
-}
-
-export function isValidAppCameraSubscribe(object: any): object is rpi.AppCameraSubscribe {
-    if (typeof object !== 'object' || object === null) {
-        return false;
-    }
-
-    const hasValidCameraId = typeof object.cameraId === 'string';
-
+    const interfaceName = 'AppCameraSubscribe';
     const validKeys = [
         'cameraId'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidCameraId && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('cameraId', obj.cameraId, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppCameraInput(object: any): object is rpi.AppCameraInput {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppCameraInput(object: unknown, logger: Logger | null = null): object is rpi.AppCameraInput {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidButtons = typeof object.buttons === 'number';
-    const hasValidMouseDelta = object.mouseDelta === undefined || isValidVector2(object.mouseDelta);
+    const obj = object as rpi.AppCameraInput;
 
+    const interfaceName = 'AppCameraInput';
     const validKeys = [
-        'buttons', 'mouseDelta'
+        'buttons',
+        'mouseDelta'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidButtons && hasValidMouseDelta && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('buttons', obj.buttons, 'number'));
+    errors.push(Object.hasOwn(obj, 'mouseDelta') ?
+        validateInterface('mouseDelta', obj.mouseDelta, logger, isValidVector2) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppCameraInfo(object: any): object is rpi.AppCameraInfo {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppMessage(object: unknown, logger: Logger | null = null): object is rpi.AppMessage {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidWidth = typeof object.width === 'number';
-    const hasValidHeight = typeof object.height === 'number';
-    const hasValidNearPlane = typeof object.nearPlane === 'number';
-    const hasValidFarPlane = typeof object.farPlane === 'number';
-    const hasValidControlFlags = typeof object.controlFlags === 'number';
+    const obj = object as rpi.AppMessage;
 
+    const interfaceName = 'AppMessage';
     const validKeys = [
-        'width', 'height', 'nearPlane', 'farPlane', 'controlFlags'
+        'response',
+        'broadcast'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidWidth && hasValidHeight && hasValidNearPlane && hasValidFarPlane && hasValidControlFlags &&
-        hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(Object.hasOwn(obj, 'response') ?
+        validateInterface('response', obj.response, logger, isValidAppResponse) : null);
+    errors.push(Object.hasOwn(obj, 'broadcast') ?
+        validateInterface('broadcast', obj.broadcast, logger, isValidAppBroadcast) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppCameraRays(object: any): object is rpi.AppCameraRays {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppResponse(object: unknown, logger: Logger | null = null): object is rpi.AppResponse {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidVerticalFov = typeof object.verticalFov === 'number';
-    const hasValidSampleOffset = typeof object.sampleOffset === 'number';
-    const hasValidRayData = object.rayData instanceof Uint8Array;
-    const hasValidDistance = typeof object.distance === 'number';
-    const hasValidEntities = Array.isArray(object.entities) && object.entities.every(isValidAppCameraRays_Entity);
-    const hasValidTimeOfDay = typeof object.timeOfDay === 'number';
+    const obj = object as rpi.AppResponse;
 
+    const interfaceName = 'AppResponse';
     const validKeys = [
-        'verticalFov', 'sampleOffset', 'rayData', 'distance', 'entities', 'number'
+        'seq',
+        'success',
+        'error',
+        'info',
+        'time',
+        'map',
+        'teamInfo',
+        'teamChat',
+        'entityInfo',
+        'flag',
+        'mapMarkers',
+        'clanInfo',
+        'clanChat',
+        'nexusAuth',
+        'cameraSubscribeInfo'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidVerticalFov && hasValidSampleOffset && hasValidRayData && hasValidDistance && hasValidEntities &&
-        hasValidTimeOfDay && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('seq', obj.seq, 'number'));
+    errors.push(Object.hasOwn(obj, 'success') ?
+        validateInterface('success', obj.success, logger, isValidAppSuccess) : null);
+    errors.push(Object.hasOwn(obj, 'error') ?
+        validateInterface('error', obj.error, logger, isValidAppError) : null);
+    errors.push(Object.hasOwn(obj, 'info') ?
+        validateInterface('info', obj.info, logger, isValidAppInfo) : null);
+    errors.push(Object.hasOwn(obj, 'time') ?
+        validateInterface('time', obj.time, logger, isValidAppTime) : null);
+    errors.push(Object.hasOwn(obj, 'map') ?
+        validateInterface('map', obj.map, logger, isValidAppMap) : null);
+    errors.push(Object.hasOwn(obj, 'teamInfo') ?
+        validateInterface('teamInfo', obj.teamInfo, logger, isValidAppTeamInfo) : null);
+    errors.push(Object.hasOwn(obj, 'teamChat') ?
+        validateInterface('teamChat', obj.teamChat, logger, isValidAppTeamChat) : null);
+    errors.push(Object.hasOwn(obj, 'entityInfo') ?
+        validateInterface('entityInfo', obj.entityInfo, logger, isValidAppEntityInfo) : null);
+    errors.push(Object.hasOwn(obj, 'flag') ?
+        validateInterface('flag', obj.flag, logger, isValidAppFlag) : null);
+    errors.push(Object.hasOwn(obj, 'mapMarkers') ?
+        validateInterface('mapMarkers', obj.mapMarkers, logger, isValidAppMapMarkers) : null);
+    errors.push(Object.hasOwn(obj, 'clanInfo') ?
+        validateInterface('clanInfo', obj.clanInfo, logger, isValidAppClanInfo) : null);
+    errors.push(Object.hasOwn(obj, 'clanChat') ?
+        validateInterface('clanChat', obj.clanChat, logger, isValidAppClanChat) : null);
+    errors.push(Object.hasOwn(obj, 'nexusAuth') ?
+        validateInterface('nexusAuth', obj.nexusAuth, logger, isValidAppNexusAuth) : null);
+    errors.push(Object.hasOwn(obj, 'cameraSubscribeInfo') ?
+        validateInterface('cameraSubscribeInfo', obj.cameraSubscribeInfo, logger, isValidAppCameraInfo) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppCameraRays_Entity(object: any): object is rpi.AppCameraRays_Entity {
-    if (typeof object !== 'object' || object === null) {
+export function isValidAppSuccess(object: unknown, logger: Logger | null = null): object is rpi.AppSuccess {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidEntityId = typeof object.entityId === 'number';
-    const hasValidType = isValidAppCameraRays_EntityType(object.type);
-    const hasValidPosition = object.position === undefined || isValidVector3(object.position);
-    const hasValidRotation = object.rotation === undefined || isValidVector3(object.rotation);
-    const hasValidSize = object.size === undefined || isValidVector3(object.size);
-    const hasValidName = object.name === undefined || typeof object.name === 'string';
+    const interfaceName = 'AppSuccess';
+    const validKeys: string[] = [];
 
+    const errors: (ValidationError | null)[] = [];
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppError(object: unknown, logger: Logger | null = null): object is rpi.AppError {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppError;
+
+    const interfaceName = 'AppError';
     const validKeys = [
-        'entityId', 'type', 'position', 'rotation', 'size', 'name'
+        'error'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidEntityId && hasValidType && hasValidPosition && hasValidRotation && hasValidSize && hasValidName &&
-        hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('error', obj.error, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppEntityType(value: any): value is rpi.AppEntityType {
-    return Object.values(rpi.AppEntityType).includes(value);
+export function isValidAppInfo(object: unknown, logger: Logger | null = null): object is rpi.AppInfo {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppInfo;
+
+    const interfaceName = 'AppInfo';
+    const validKeys = [
+        'name',
+        'headerImage',
+        'url',
+        'map',
+        'mapSize',
+        'wipeTime',
+        'players',
+        'maxPlayers',
+        'queuedPlayers',
+        'seed',
+        'salt',
+        'logoImage',
+        'nexus',
+        'nexusId',
+        'nexusZone',
+        'camerasEnabled'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('name', obj.name, 'string'));
+    errors.push(validateType('headerImage', obj.headerImage, 'string'));
+    errors.push(validateType('url', obj.url, 'string'));
+    errors.push(validateType('map', obj.map, 'string'));
+    errors.push(validateType('mapSize', obj.mapSize, 'number'));
+    errors.push(validateType('wipeTime', obj.wipeTime, 'number'));
+    errors.push(validateType('players', obj.players, 'number'));
+    errors.push(validateType('maxPlayers', obj.maxPlayers, 'number'));
+    errors.push(validateType('queuedPlayers', obj.queuedPlayers, 'number'));
+    errors.push(validateType('seed', obj.seed, 'number'));
+    errors.push(validateType('salt', obj.salt, 'number'));
+    errors.push(validateType('logoImage', obj.logoImage, 'string', undefined));
+    errors.push(validateType('nexus', obj.nexus, 'string', undefined));
+    errors.push(validateType('nexusId', obj.nexusId, 'number'));
+    errors.push(validateType('nexusZone', obj.nexusZone, 'string', undefined));
+    errors.push(validateType('camerasEnabled', obj.camerasEnabled, 'boolean'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppMarkerType(value: any): value is rpi.AppMarkerType {
-    return Object.values(rpi.AppMarkerType).includes(value);
+export function isValidAppTime(object: unknown, logger: Logger | null = null): object is rpi.AppTime {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTime;
+
+    const interfaceName = 'AppTime';
+    const validKeys = [
+        'dayLengthMinutes',
+        'timeScale',
+        'sunrise',
+        'sunset',
+        'time'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('dayLengthMinutes', obj.dayLengthMinutes, 'number'));
+    errors.push(validateType('timeScale', obj.timeScale, 'number'));
+    errors.push(validateType('sunrise', obj.sunrise, 'number'));
+    errors.push(validateType('sunset', obj.sunset, 'number'));
+    errors.push(validateType('time', obj.time, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppTeamInfo_Note_Type(value: any): value is rpi.AppTeamInfo_Note_Type {
-    return Object.values(rpi.AppTeamInfo_Note_Type).includes(value);
+export function isValidAppMap(object: unknown, logger: Logger | null = null): object is rpi.AppMap {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppMap;
+
+    const interfaceName = 'AppMap';
+    const validKeys = [
+        'width',
+        'height',
+        'jpgImage',
+        'oceanMargin',
+        'monuments',
+        'background'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('width', obj.width, 'number'));
+    errors.push(validateType('height', obj.height, 'number'));
+    errors.push(validateUint8Array('jpgImage', obj.jpgImage));
+    errors.push(validateType('oceanMargin', obj.oceanMargin, 'number'));
+    errors.push(validateArrayOfInterfaces('monuments', obj.monuments, logger, isValidAppMap_Monument));
+    errors.push(validateType('background', obj.background, 'string', undefined));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppCameraRays_EntityType(value: any): value is rpi.AppCameraRays_EntityType {
-    return Object.values(rpi.AppCameraRays_EntityType).includes(value);
+export function isValidAppMap_Monument(object: unknown, logger: Logger | null = null): object is rpi.AppMap_Monument {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppMap_Monument;
+
+    const interfaceName = 'AppMap_Monument';
+    const validKeys = [
+        'token',
+        'x',
+        'y'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('token', obj.token, 'string'));
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
+
+export function isValidAppTeamInfo(object: unknown, logger: Logger | null = null): object is rpi.AppTeamInfo {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTeamInfo;
+
+    const interfaceName = 'AppTeamInfo';
+    const validKeys = [
+        'leaderSteamId',
+        'members',
+        'mapNotes',
+        'leaderMapNotes'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('leaderSteamId', obj.leaderSteamId, 'string'));
+    errors.push(validateArrayOfInterfaces('members', obj.members, logger, isValidAppTeamInfo_Member));
+    errors.push(validateArrayOfInterfaces('mapNotes', obj.mapNotes, logger, isValidAppTeamInfo_Note));
+    errors.push(validateArrayOfInterfaces('leaderMapNotes', obj.leaderMapNotes, logger, isValidAppTeamInfo_Note));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppTeamInfo_Member(object: unknown, logger: Logger | null = null):
+    object is rpi.AppTeamInfo_Member {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTeamInfo_Member;
+
+    const interfaceName = 'AppTeamInfo_Member';
+    const validKeys = [
+        'steamId',
+        'name',
+        'x',
+        'y',
+        'isOnline',
+        'spawnTime',
+        'isAlive',
+        'deathTime'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+    errors.push(validateType('name', obj.name, 'string'));
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('isOnline', obj.isOnline, 'boolean'));
+    errors.push(validateType('spawnTime', obj.spawnTime, 'number'));
+    errors.push(validateType('isAlive', obj.isAlive, 'boolean'));
+    errors.push(validateType('deathTime', obj.deathTime, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppTeamInfo_Note(object: unknown, logger: Logger | null = null):
+    object is rpi.AppTeamInfo_Note {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTeamInfo_Note;
+
+    const interfaceName = 'AppTeamInfo_Note';
+    const validKeys = [
+        'type',
+        'x',
+        'y',
+        'icon',
+        'colourIndex',
+        'label'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateInterface('type', obj.type, logger, isValidAppTeamInfo_Note_Type));
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('icon', obj.icon, 'number'));
+    errors.push(validateType('colourIndex', obj.colourIndex, 'number'));
+    errors.push(validateType('label', obj.label, 'string', undefined));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+export function isValidAppTeamInfo_Note_Type(value: unknown): value is rpi.AppTeamInfo_Note_Type {
+    return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_Type).includes(value);
+}
+
+export function isValidAppTeamChat(object: unknown, logger: Logger | null = null): object is rpi.AppTeamChat {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTeamChat;
+
+    const interfaceName = 'AppTeamChat';
+    const validKeys = [
+        'messages'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateArrayOfInterfaces('messages', obj.messages, logger, isValidAppTeamMessage));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppTeamMessage(object: unknown, logger: Logger | null = null): object is rpi.AppTeamMessage {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTeamMessage;
+
+    const interfaceName = 'AppTeamMessage';
+    const validKeys = [
+        'steamId',
+        'name',
+        'message',
+        'color',
+        'time'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+    errors.push(validateType('name', obj.name, 'string'));
+    errors.push(validateType('message', obj.message, 'string'));
+    errors.push(validateType('color', obj.color, 'string'));
+    errors.push(validateType('time', obj.time, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppEntityInfo(object: unknown, logger: Logger | null = null): object is rpi.AppEntityInfo {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppEntityInfo;
+
+    const interfaceName = 'AppEntityInfo';
+    const validKeys = [
+        'type',
+        'payload'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateInterface('type', obj.type, logger, isValidAppEntityType));
+    errors.push(Object.hasOwn(obj, 'payload') ?
+        validateInterface('payload', obj.payload, logger, isValidAppEntityPayload) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppEntityType(value: unknown): value is rpi.AppEntityType {
+    return typeof value === 'number' && Object.values(rpi.AppEntityType).includes(value);
+}
+
+export function isValidAppEntityPayload(object: unknown, logger: Logger | null = null): object is rpi.AppEntityPayload {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppEntityPayload;
+
+    const interfaceName = 'AppEntityPayload';
+    const validKeys = [
+        'value',
+        'items',
+        'capacity',
+        'hasProtection',
+        'protectionExpiry'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('value', obj.value, 'boolean'));
+    errors.push(validateInterface('items', obj.items, logger, isValidAppEntityPayload_Item));
+    errors.push(validateType('capacity', obj.capacity, 'number'));
+    errors.push(validateType('hasProtection', obj.hasProtection, 'boolean', undefined));
+    errors.push(validateType('protectionExpiry', obj.protectionExpiry, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppEntityPayload_Item(object: unknown, logger: Logger | null = null):
+    object is rpi.AppEntityPayload_Item {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppEntityPayload_Item;
+
+    const interfaceName = 'AppEntityPayload_Item';
+    const validKeys = [
+        'itemId',
+        'quantity',
+        'itemIsBlueprint'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('itemId', obj.itemId, 'number'));
+    errors.push(validateType('quantity', obj.quantity, 'number'));
+    errors.push(validateType('itemIsBlueprint', obj.itemIsBlueprint, 'boolean'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppMapMarkers(object: unknown, logger: Logger | null = null): object is rpi.AppMapMarkers {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppMapMarkers;
+
+    const interfaceName = 'AppMapMarkers';
+    const validKeys = [
+        'markers'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateArrayOfInterfaces('markers', obj.markers, logger, isValidAppMarker));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppMarker(object: unknown, logger: Logger | null = null): object is rpi.AppMarker {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppMarker;
+
+    const interfaceName = 'AppMarker';
+    const validKeys = [
+        'id',
+        'type',
+        'x',
+        'y',
+        'steamId',
+        'rotation',
+        'radius',
+        'color1',
+        'color2',
+        'alpha',
+        'name',
+        'outOfStock',
+        'sellOrders'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('id', obj.id, 'number'));
+    errors.push(validateInterface('type', obj.type, logger, isValidAppMarkerType));
+    errors.push(validateType('x', obj.x, 'number'));
+    errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+    errors.push(validateType('rotation', obj.rotation, 'number'));
+    errors.push(validateType('radius', obj.radius, 'number'));
+    errors.push(Object.hasOwn(obj, 'color1') ?
+        validateInterface('color1', obj.color1, logger, isValidVector4) : null);
+    errors.push(Object.hasOwn(obj, 'color2') ?
+        validateInterface('color2', obj.color2, logger, isValidVector4) : null);
+    errors.push(validateType('alpha', obj.alpha, 'number'));
+    errors.push(validateType('name', obj.name, 'string', undefined));
+    errors.push(validateType('outOfStock', obj.outOfStock, 'boolean'));
+    errors.push(validateArrayOfInterfaces('sellOrders', obj.sellOrders, logger, isValidAppMarker_SellOrder));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppMarkerType(value: unknown): value is rpi.AppMarkerType {
+    return typeof value === 'number' && Object.values(rpi.AppMarkerType).includes(value);
+}
+
+export function isValidAppMarker_SellOrder(object: unknown, logger: Logger | null = null):
+    object is rpi.AppMarker_SellOrder {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppMarker_SellOrder;
+
+    const interfaceName = 'AppMarker_SellOrder';
+    const validKeys = [
+        'itemId',
+        'quantity',
+        'currencyId',
+        'costPerItem',
+        'amountInStock',
+        'itemIsBlueprint',
+        'currencyIsBlueprint',
+        'itemCondition',
+        'itemConditionMax',
+        'priceMultiplier'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('itemId', obj.itemId, 'number'));
+    errors.push(validateType('quantity', obj.quantity, 'number'));
+    errors.push(validateType('currencyId', obj.currencyId, 'number'));
+    errors.push(validateType('costPerItem', obj.costPerItem, 'number'));
+    errors.push(validateType('amountInStock', obj.amountInStock, 'number'));
+    errors.push(validateType('itemIsBlueprint', obj.itemIsBlueprint, 'boolean'));
+    errors.push(validateType('currencyIsBlueprint', obj.currencyIsBlueprint, 'boolean'));
+    errors.push(validateType('itemCondition', obj.itemCondition, 'number'));
+    errors.push(validateType('itemConditionMax', obj.itemConditionMax, 'number'));
+    errors.push(validateType('priceMultiplier', obj.priceMultiplier, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppClanInfo(object: unknown, logger: Logger | null = null): object is rpi.AppClanInfo {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppClanInfo;
+
+    const interfaceName = 'AppClanInfo';
+    const validKeys = [
+        'clanInfo'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(Object.hasOwn(obj, 'clanInfo') ?
+        validateInterface('clanInfo', obj.clanInfo, logger, isValidClanInfo) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppClanChat(object: unknown, logger: Logger | null = null): object is rpi.AppClanChat {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppClanChat;
+
+    const interfaceName = 'AppClanChat';
+    const validKeys = [
+        'messages'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateArrayOfInterfaces('messages', obj.messages, logger, isValidAppClanMessage));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppClanMessage(object: unknown, logger: Logger | null = null): object is rpi.AppClanMessage {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppClanMessage;
+
+    const interfaceName = 'AppClanMessage';
+    const validKeys = [
+        'steamId',
+        'name',
+        'message',
+        'time'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('steamId', obj.steamId, 'string'));
+    errors.push(validateType('name', obj.name, 'string'));
+    errors.push(validateType('message', obj.message, 'string'));
+    errors.push(validateType('time', obj.time, 'string'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppNexusAuth(object: unknown, logger: Logger | null = null): object is rpi.AppNexusAuth {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppNexusAuth;
+
+    const interfaceName = 'AppNexusAuth';
+    const validKeys = [
+        'serverId',
+        'playerToken'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('serverId', obj.serverId, 'string'));
+    errors.push(validateType('playerToken', obj.playerToken, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppCameraInfo(object: unknown, logger: Logger | null = null): object is rpi.AppCameraInfo {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppCameraInfo;
+
+    const interfaceName = 'AppCameraInfo';
+    const validKeys = [
+        'width',
+        'height',
+        'nearPlane',
+        'farPlane',
+        'controlFlags'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('width', obj.width, 'number'));
+    errors.push(validateType('height', obj.height, 'number'));
+    errors.push(validateType('nearPlane', obj.nearPlane, 'number'));
+    errors.push(validateType('farPlane', obj.farPlane, 'number'));
+    errors.push(validateType('controlFlags', obj.controlFlags, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppBroadcast(object: unknown, logger: Logger | null = null): object is rpi.AppBroadcast {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppBroadcast;
+
+    const interfaceName = 'AppBroadcast';
+    const validKeys = [
+        'teamChanged',
+        'teamMessage',
+        'entityChanged',
+        'clanChanged',
+        'clanMessage',
+        'cameraRays'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(Object.hasOwn(obj, 'teamChanged') ?
+        validateInterface('teamChanged', obj.teamChanged, logger, isValidAppTeamChanged) : null);
+    errors.push(Object.hasOwn(obj, 'teamMessage') ?
+        validateInterface('teamMessage', obj.teamMessage, logger, isValidAppTeamMessage) : null);
+    errors.push(Object.hasOwn(obj, 'entityChanged') ?
+        validateInterface('entityChanged', obj.entityChanged, logger, isValidAppEntityChanged) : null);
+    errors.push(Object.hasOwn(obj, 'clanChanged') ?
+        validateInterface('clanChanged', obj.clanChanged, logger, isValidAppClanChanged) : null);
+    errors.push(Object.hasOwn(obj, 'clanMessage') ?
+        validateInterface('clanMessage', obj.clanMessage, logger, isValidAppNewClanMessage) : null);
+    errors.push(Object.hasOwn(obj, 'cameraRays') ?
+        validateInterface('cameraRays', obj.cameraRays, logger, isValidAppCameraRays) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppTeamChanged(object: unknown, logger: Logger | null = null): object is rpi.AppTeamChanged {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppTeamChanged;
+
+    const interfaceName = 'AppTeamChanged';
+    const validKeys = [
+        'playerId',
+        'teamInfo'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('playerId', obj.playerId, 'string'));
+    errors.push(Object.hasOwn(obj, 'teamInfo') ?
+        validateInterface('teamInfo', obj.teamInfo, logger, isValidAppTeamInfo) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppNewTeamMessage(object: unknown, logger: Logger | null = null):
+    object is rpi.AppNewTeamMessage {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppNewTeamMessage;
+
+    const interfaceName = 'AppNewTeamMessage';
+    const validKeys = [
+        'message'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(Object.hasOwn(obj, 'message') ?
+        validateInterface('message', obj.message, logger, isValidAppTeamMessage) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppEntityChanged(object: unknown, logger: Logger | null = null): object is rpi.AppEntityChanged {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppEntityChanged;
+
+    const interfaceName = 'AppEntityChanged';
+    const validKeys = [
+        'entityId',
+        'payload'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('entityId', obj.entityId, 'number', undefined));
+    errors.push(Object.hasOwn(obj, 'payload') ?
+        validateInterface('payload', obj.payload, logger, isValidAppEntityPayload) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppClanChanged(object: unknown, logger: Logger | null = null): object is rpi.AppClanChanged {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppClanChanged;
+
+    const interfaceName = 'AppClanChanged';
+    const validKeys = [
+        'clanInfo'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(Object.hasOwn(obj, 'clanInfo') ?
+        validateInterface('clanInfo', obj.clanInfo, logger, isValidClanInfo) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppNewClanMessage(object: unknown, logger: Logger | null = null):
+    object is rpi.AppNewClanMessage {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppNewClanMessage;
+
+    const interfaceName = 'AppNewClanMessage';
+    const validKeys = [
+        'clanId',
+        'message'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('clanId', obj.clanId, 'string'));
+    errors.push(Object.hasOwn(obj, 'message') ?
+        validateInterface('message', obj.message, logger, isValidAppClanMessage) : null);
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppCameraRays(object: unknown, logger: Logger | null = null):
+    object is rpi.AppCameraRays {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppCameraRays;
+
+    const interfaceName = 'AppCameraRays';
+    const validKeys = [
+        'verticalFov',
+        'sampleOffset',
+        'rayData',
+        'distance',
+        'entities',
+        'timeOfDay'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('verticalFov', obj.verticalFov, 'number'));
+    errors.push(validateType('sampleOffset', obj.sampleOffset, 'number'));
+    errors.push(validateUint8Array('rayData', obj.rayData));
+    errors.push(validateType('distance', obj.distance, 'number'));
+    errors.push(validateArrayOfInterfaces('entities', obj.entities, logger, isValidAppCameraRays_Entity));
+    errors.push(validateType('timeOfDay', obj.timeOfDay, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppCameraRays_Entity(object: unknown, logger: Logger | null = null):
+    object is rpi.AppCameraRays_Entity {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
+        return false;
+    }
+
+    const obj = object as rpi.AppCameraRays_Entity;
+
+    const interfaceName = 'AppCameraRays_Entity';
+    const validKeys = [
+        'entityId',
+        'type',
+        'position',
+        'rotation',
+        'size',
+        'name'
+    ];
+
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('entityId', obj.entityId, 'number'));
+    errors.push(validateInterface('type', obj.type, logger, isValidAppCameraRays_EntityType));
+    errors.push(Object.hasOwn(obj, 'position') ?
+        validateInterface('position', obj.position, logger, isValidVector3) : null);
+    errors.push(Object.hasOwn(obj, 'rotation') ?
+        validateInterface('rotation', obj.rotation, logger, isValidVector3) : null);
+    errors.push(Object.hasOwn(obj, 'size') ?
+        validateInterface('size', obj.size, logger, isValidVector3) : null);
+    errors.push(validateType('name', obj.name, 'string', undefined));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
+}
+
+export function isValidAppCameraRays_EntityType(value: unknown): value is rpi.AppCameraRays_EntityType {
+    return typeof value === 'number' && Object.values(rpi.AppCameraRays_EntityType).includes(value);
+}
+
 
 /**
  * Validation checks for other interfaces and enums.
  */
 
-export function isValidRustPlusRequestTokens(object: any): object is rp.RustPlusRequestTokens {
-    if (typeof object !== 'object' || object === null) {
+export function isValidRustPlusRequestTokens(object: unknown, logger: Logger | null = null):
+    object is rp.RustPlusRequestTokens {
+    if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
     }
 
-    const hasValidConnection = typeof object.connection === 'number';
-    const hasValidPlayerId = typeof object.playerId === 'object' && object.playerId !== null &&
-        Object.keys(object.playerId).every(key => typeof key === 'string' && typeof object.playerId[key] === 'number');
-    const hasValidServerPairing = typeof object.serverPairing === 'number';
+    const obj = object as rp.RustPlusRequestTokens;
 
+    const interfaceName = 'RustPlusRequestTokens';
     const validKeys = [
-        'connection', 'playerId', 'serverPairing'
+        'connection',
+        'playerId',
+        'serverPairing'
     ];
-    const hasOnlyValidKeys = Object.keys(object).every(key => validKeys.includes(key));
 
-    return hasValidConnection && hasValidPlayerId && hasValidServerPairing && hasOnlyValidKeys;
+    const errors: (ValidationError | null)[] = [];
+    errors.push(validateType('connection', obj.connection, 'number'));
+    errors.push(validateObjectOfTypes('playerId', obj.playerId, 'number'));
+    errors.push(validateType('serverPairing', obj.serverPairing, 'number'));
+
+    const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
+
+    const objectKeys = Object.keys(object);
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const hasOnlyValidKeys = unknownKeys.length === 0;
+
+    logValidations(interfaceName, filteredErrors, unknownKeys, logger);
+
+    return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidEmitErrorType(value: any): value is rp.EmitErrorType {
-    return Object.values(rp.EmitErrorType).includes(value);
+export function isValidEmitErrorType(value: unknown): value is rp.EmitErrorType {
+    return typeof value === 'number' && Object.values(rp.EmitErrorType).includes(value);
 }
 
-export function isValidAppResponseError(value: any): value is rp.AppResponseError {
-    return Object.values(rp.AppResponseError).includes(value);
+export function isValidAppResponseError(value: unknown): value is rp.AppResponseError {
+    return typeof value === 'number' && Object.values(rp.AppResponseError).includes(value);
 }
 
-export function isValidConsumeTokensError(value: any): value is rp.ConsumeTokensError {
-    return Object.values(rp.ConsumeTokensError).includes(value);
+export function isValidConsumeTokensError(value: unknown): value is rp.ConsumeTokensError {
+    return typeof value === 'number' && Object.values(rp.ConsumeTokensError).includes(value);
 }

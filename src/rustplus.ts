@@ -22,6 +22,7 @@
 
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
+import { Logger } from 'winston';
 
 import * as rpi from './interfaces/rustplus';
 import * as validation from './validation';
@@ -222,6 +223,7 @@ export class RustPlus extends EventEmitter {
     public ip: string;
     public port: string;
     private useFacepunchProxy: boolean;
+    private logger: Logger | null;
 
     private seq: number;
     private seqCallbacks: CallbackFunction[];
@@ -245,12 +247,13 @@ export class RustPlus extends EventEmitter {
      * - disconnected: When we are disconnected from the Rust Server.
      * - error: When something goes wrong with the WebSocket, incoming message or the request callback function.
      */
-    constructor(ip: string, port: string, useFacepunchProxy: boolean = false) {
+    constructor(ip: string, port: string, useFacepunchProxy: boolean = false, logger: Logger | null = null) {
         super();
 
         this.ip = ip;
         this.port = port;
         this.useFacepunchProxy = useFacepunchProxy;
+        this.logger = logger;
 
         this.seq = 0;
         this.seqCallbacks = [];
@@ -526,7 +529,7 @@ export class RustPlus extends EventEmitter {
                 ...data
             };
 
-            if (!validation.isValidAppRequest(appRequestData)) {
+            if (!validation.isValidAppRequest(appRequestData, this.logger)) {
                 throw new Error('AppRequest data is invalid.');
             }
         }
@@ -592,7 +595,7 @@ export class RustPlus extends EventEmitter {
                 clearTimeout(timeout);
 
                 try {
-                    if (!validation.isValidAppMessage(appMessage)) {
+                    if (!validation.isValidAppMessage(appMessage, this.logger)) {
                         throw new Error('appMessage is invalid format.');
                     }
 
