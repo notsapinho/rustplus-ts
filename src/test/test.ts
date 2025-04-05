@@ -48,6 +48,10 @@ const storageMonitor0 = parseInt(process.env.STORAGE_MONITOR_0 as string, 10); /
 const storageMonitor1 = parseInt(process.env.STORAGE_MONITOR_1 as string, 10); // Vending Machine
 const storageMonitor2 = parseInt(process.env.STORAGE_MONITOR_2 as string, 10); // Large Wood Box
 
+const storageMonitor3 = parseInt(process.env.STORAGE_MONITOR_3 as string, 10); // Tool Cupboard wihout power
+const storageMonitor4 = parseInt(process.env.STORAGE_MONITOR_4 as string, 10); // Vending Machine without power
+const storageMonitor5 = parseInt(process.env.STORAGE_MONITOR_5 as string, 10); // Large Wood Box without power
+
 const camera1 = process.env.CAM1 as string; // Regular camera
 const camera2 = process.env.CAM2 as string; // PTZ camera
 const drone1 = process.env.DRONE1 as string;
@@ -71,17 +75,17 @@ async function run_test_functions() {
     rp.on('connected', async () => {
         console.log('EVENT connected');
 
-        printMessage = false;
+        printMessage = true;
         printRequest = false;
         //await test_callback_api_functions(rp);
-        //await test_async_api_functions(rp);
+        await test_async_api_functions(rp);
         //await test_camera_module(rp);
         printMessage = true;
         printRequest = true;
 
         await rp.disconnect()
-        await delay(5000)
-        await rp.connect()
+        //await delay(5000)
+        //await rp.connect()
     });
 
     rp.on('message', async (appMessage: rustplus.AppMessage, handled: boolean) => {
@@ -128,6 +132,7 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
     response = await rp.getMapAsync(teamMember1SteamId, teamMember1Token);
     validateAsyncResponse(rp, 'getMapAsync', response);
     console.log('getMapAsync: OK');
+    //console.log(JSON.stringify((response as rustplus.AppResponse).map?.monuments));
     await delay(500);
 
     response = await rp.getTeamInfoAsync(teamMember1SteamId, teamMember1Token);
@@ -136,7 +141,7 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
     await delay(500);
 
     response = await rp.getTeamChatAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getTeamChatAsync', response);
+    validateAsyncResponse(rp, 'getTeamChatAsync', response, rustplus.AppResponseError.NoTeam);
     console.log('getTeamChatAsync: OK');
     await delay(500);
 
@@ -146,6 +151,8 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
     await delay(500);
 
     response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, smartSwitch0);
+    //response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor0);
+    //response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, smartAlarm0);
     validateAsyncResponse(rp, 'getEntityInfoAsync', response);
     console.log('getEntityInfoAsync: OK');
     await delay(500);
@@ -201,16 +208,16 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
 
     /* Not implemented yet. */
     //response = await rp.getNexusAuthAsync(teamMember1SteamId, teamMember1Token, 'Test Application Key');
-    //validateAsyncResponse(rp, 'getNexusAuthAsync', response)//, rustplus.AppResponseError.NoClan);
+    //validateAsyncResponse(rp, 'getNexusAuthAsync', response, rustplus.AppResponseError.NotFound);
     //console.log('getNexusAuthAsync: OK');
     //await delay(500);
 
-    response = await rp.cameraSubscribeAsync(teamMember2SteamId, teamMember2Token, 'Test1');
+    response = await rp.cameraSubscribeAsync(teamMember1SteamId, teamMember1Token, 'Turret1');
     validateAsyncResponse(rp, 'cameraSubscribeAsync', response);
     console.log('cameraSubscribeAsync: OK');
     await delay(500);
 
-    response = await rp.cameraUnsubscribeAsync(teamMember2SteamId, teamMember2Token);
+    response = await rp.cameraUnsubscribeAsync(teamMember1SteamId, teamMember1Token);
     validateAsyncResponse(rp, 'cameraUnsubscribeAsync', response);
     console.log('cameraUnsubscribeAsync: OK');
     await delay(500);
@@ -223,6 +230,7 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
     response = await rp.cameraInputAsync(teamMember2SteamId, teamMember2Token, 0, 10, 10);
     validateAsyncResponse(rp, 'cameraInputAsync', response);
     console.log('cameraInputAsync: OK');
+    //console.log(JSON.stringify((response as rustplus.AppResponse)));
     await delay(500);
 }
 
