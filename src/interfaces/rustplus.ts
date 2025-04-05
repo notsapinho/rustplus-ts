@@ -903,13 +903,13 @@ export interface AppTeamInfo_Note {
      */
     y: number;
     /**
-     * @generated from protobuf field: int32 icon = 5;
+     * @generated from protobuf field: rustplus.AppTeamInfo.Note.Icon icon = 5;
      */
-    icon: number;
+    icon: AppTeamInfo_Note_Icon;
     /**
-     * @generated from protobuf field: int32 colourIndex = 6;
+     * @generated from protobuf field: rustplus.AppTeamInfo.Note.ColourIndex colourIndex = 6;
      */
-    colourIndex: number;
+    colourIndex: AppTeamInfo_Note_ColourIndex;
     /**
      * @generated from protobuf field: optional string label = 7;
      */
@@ -927,6 +927,88 @@ export enum AppTeamInfo_Note_Type {
      * @generated from protobuf enum value: PointOfInterest = 1;
      */
     PointOfInterest = 1
+}
+/**
+ * @generated from protobuf enum rustplus.AppTeamInfo.Note.Icon
+ */
+export enum AppTeamInfo_Note_Icon {
+    /**
+     * @generated from protobuf enum value: Pin = 0;
+     */
+    Pin = 0,
+    /**
+     * @generated from protobuf enum value: Dollar = 1;
+     */
+    Dollar = 1,
+    /**
+     * @generated from protobuf enum value: Home = 2;
+     */
+    Home = 2,
+    /**
+     * @generated from protobuf enum value: Parachute = 3;
+     */
+    Parachute = 3,
+    /**
+     * @generated from protobuf enum value: Scope = 4;
+     */
+    Scope = 4,
+    /**
+     * @generated from protobuf enum value: Shield = 5;
+     */
+    Shield = 5,
+    /**
+     * @generated from protobuf enum value: Skull = 6;
+     */
+    Skull = 6,
+    /**
+     * @generated from protobuf enum value: Sleep = 7;
+     */
+    Sleep = 7,
+    /**
+     * @generated from protobuf enum value: Zzz = 8;
+     */
+    Zzz = 8,
+    /**
+     * @generated from protobuf enum value: Gun = 9;
+     */
+    Gun = 9,
+    /**
+     * @generated from protobuf enum value: Rock = 10;
+     */
+    Rock = 10,
+    /**
+     * @generated from protobuf enum value: Loot = 11;
+     */
+    Loot = 11
+}
+/**
+ * @generated from protobuf enum rustplus.AppTeamInfo.Note.ColourIndex
+ */
+export enum AppTeamInfo_Note_ColourIndex {
+    /**
+     * @generated from protobuf enum value: Yellow = 0;
+     */
+    Yellow = 0,
+    /**
+     * @generated from protobuf enum value: Blue = 1;
+     */
+    Blue = 1,
+    /**
+     * @generated from protobuf enum value: Green = 2;
+     */
+    Green = 2,
+    /**
+     * @generated from protobuf enum value: Red = 3;
+     */
+    Red = 3,
+    /**
+     * @generated from protobuf enum value: Purple = 4;
+     */
+    Purple = 4,
+    /**
+     * @generated from protobuf enum value: Cyan = 5;
+     */
+    Cyan = 5
 }
 /**
  * @generated from protobuf message rustplus.AppTeamMessage
@@ -4110,8 +4192,8 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
             { no: 2, name: "type", kind: "enum", T: () => ["rustplus.AppTeamInfo.Note.Type", AppTeamInfo_Note_Type] },
             { no: 3, name: "x", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
             { no: 4, name: "y", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 5, name: "icon", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
-            { no: 6, name: "colourIndex", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
+            { no: 5, name: "icon", kind: "enum", T: () => ["rustplus.AppTeamInfo.Note.Icon", AppTeamInfo_Note_Icon] },
+            { no: 6, name: "colourIndex", kind: "enum", T: () => ["rustplus.AppTeamInfo.Note.ColourIndex", AppTeamInfo_Note_ColourIndex] },
             { no: 7, name: "label", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
@@ -4140,10 +4222,10 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
                 case /* float y */ 4:
                     message.y = reader.float();
                     break;
-                case /* int32 icon */ 5:
+                case /* rustplus.AppTeamInfo.Note.Icon icon */ 5:
                     message.icon = reader.int32();
                     break;
-                case /* int32 colourIndex */ 6:
+                case /* rustplus.AppTeamInfo.Note.ColourIndex colourIndex */ 6:
                     message.colourIndex = reader.int32();
                     break;
                 case /* optional string label */ 7:
@@ -4170,10 +4252,10 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
         /* float y = 4; */
         if (message.y !== 0)
             writer.tag(4, WireType.Bit32).float(message.y);
-        /* int32 icon = 5; */
+        /* rustplus.AppTeamInfo.Note.Icon icon = 5; */
         if (message.icon !== 0)
             writer.tag(5, WireType.Varint).int32(message.icon);
-        /* int32 colourIndex = 6; */
+        /* rustplus.AppTeamInfo.Note.ColourIndex colourIndex = 6; */
         if (message.colourIndex !== 0)
             writer.tag(6, WireType.Varint).int32(message.colourIndex);
         /* optional string label = 7; */

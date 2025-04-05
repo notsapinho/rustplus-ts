@@ -306,13 +306,37 @@ message AppTeamInfo {
         Type type = 2;
         float x = 3;
         float y = 4;
-        int32 icon = 5;
-        int32 colourIndex = 6;
+        Icon icon = 5;
+        ColourIndex colourIndex = 6;
         optional string label = 7;
 
         enum Type {
             Death = 0;
             PointOfInterest = 1;
+        }
+
+        enum Icon {
+            Pin = 0;
+            Dollar = 1;
+            Home = 2;
+            Parachute = 3;
+            Scope = 4;
+            Shield = 5;
+            Skull = 6;
+            Sleep = 7;
+            Zzz = 8;
+            Gun = 9;
+            Rock = 10;
+            Loot = 11;
+        }
+
+        enum ColourIndex {
+            Yellow = 0;
+            Blue = 1;
+            Green = 2;
+            Red = 3;
+            Purple = 4;
+            Cyan = 5;
         }
     }
 }

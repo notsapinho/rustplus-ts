@@ -1398,8 +1398,8 @@ export function isValidAppTeamInfo_Note(object: unknown, logger: Logger | null =
     errors.push(validateInterface('type', obj.type, logger, isValidAppTeamInfo_Note_Type));
     errors.push(validateType('x', obj.x, 'number'));
     errors.push(validateType('y', obj.y, 'number'));
-    errors.push(validateType('icon', obj.icon, 'number'));
-    errors.push(validateType('colourIndex', obj.colourIndex, 'number'));
+    errors.push(validateInterface('icon', obj.icon, logger, isValidAppTeamInfo_Note_Icon));
+    errors.push(validateInterface('colourIndex', obj.colourIndex, logger, isValidAppTeamInfo_Note_ColourIndex));
     errors.push(validateType('label', obj.label, 'string', undefined));
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
@@ -1412,8 +1412,17 @@ export function isValidAppTeamInfo_Note(object: unknown, logger: Logger | null =
 
     return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
+
 export function isValidAppTeamInfo_Note_Type(value: unknown): value is rpi.AppTeamInfo_Note_Type {
     return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_Type).includes(value);
+}
+
+export function isValidAppTeamInfo_Note_Icon(value: unknown): value is rpi.AppTeamInfo_Note_Icon {
+    return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_Icon).includes(value);
+}
+
+export function isValidAppTeamInfo_Note_ColourIndex(value: unknown): value is rpi.AppTeamInfo_Note_ColourIndex {
+    return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_ColourIndex).includes(value);
 }
 
 export function isValidAppTeamChat(object: unknown, logger: Logger | null = null): object is rpi.AppTeamChat {
@@ -1527,7 +1536,7 @@ export function isValidAppEntityPayload(object: unknown, logger: Logger | null =
 
     const errors: (ValidationError | null)[] = [];
     errors.push(validateType('value', obj.value, 'boolean'));
-    errors.push(validateInterface('items', obj.items, logger, isValidAppEntityPayload_Item));
+    errors.push(validateArrayOfInterfaces('items', obj.items, logger, isValidAppEntityPayload_Item));
     errors.push(validateType('capacity', obj.capacity, 'number'));
     errors.push(validateType('hasProtection', obj.hasProtection, 'boolean', undefined));
     errors.push(validateType('protectionExpiry', obj.protectionExpiry, 'number'));
