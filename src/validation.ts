@@ -780,7 +780,7 @@ export function isValidAppRequest(object: unknown, logger: Logger | null = null)
     errors.push(Object.hasOwn(obj, 'cameraUnsubscribe') ?
         validateInterface('cameraUnsubscribe', obj.cameraUnsubscribe, logger, isValidAppEmpty) : null);
     errors.push(Object.hasOwn(obj, 'cameraInput') ?
-        validateInterface('cameraInput', obj.cameraInput, logger, isValidAppCameraInfo) : null);
+        validateInterface('cameraInput', obj.cameraInput, logger, isValidAppCameraInput) : null);
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
 
