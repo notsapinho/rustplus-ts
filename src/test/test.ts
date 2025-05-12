@@ -75,7 +75,7 @@ async function run_test_functions() {
     rp.on('connected', async () => {
         console.log('EVENT connected');
 
-        printMessage = true;
+        printMessage = false;
         printRequest = false;
         //await test_callback_api_functions(rp);
         await test_async_api_functions(rp);
@@ -83,9 +83,13 @@ async function run_test_functions() {
         printMessage = true;
         printRequest = true;
 
+        for (let i = 3; i >= 0; i--) {
+            console.log(`Closing connection in ${i}...`);
+            if (i !== 0) {
+                await delay(1000);
+            }
+        }
         await rp.disconnect()
-        //await delay(5000)
-        //await rp.connect()
     });
 
     rp.on('message', async (appMessage: rustplus.AppMessage, handled: boolean) => {
@@ -116,121 +120,251 @@ async function test_callback_api_functions(rp: rustplus.RustPlus) {
     //    console.log(JSON.stringify(appInfo))
     //});
 }
-
+/**
+ * Prerequisite:
+ * - Team Duo, to be able to test promote leader.
+ * - 1 Smart Switch defined.
+ * - 1 Smart Alarm defined.
+ * - 2 Storage Monitors Tool Cupboards defined, one powered and one not powered.
+ * - 2 Storage Monitors Vending Machines defined, one powered and one not powered.
+ * - 2 Storage Monitors Large Wood Box defined, one powered and one not powered.
+ */
 async function test_async_api_functions(rp: rustplus.RustPlus) {
     let response: rustplus.AppResponse | Error | rustplus.ConsumeTokensError;
+
+    console.log('Validating getInfoAsync:');
     response = await rp.getInfoAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getInfoAsync', response);
-    console.log('getInfoAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getTimeAsync:');
     response = await rp.getTimeAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getTimeAsync', response);
-    console.log('getTimeAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getMapAsync:');
     response = await rp.getMapAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getMapAsync', response);
-    console.log('getMapAsync: OK');
-    //console.log(JSON.stringify((response as rustplus.AppResponse).map?.monuments));
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getTeamInfoAsync:');
     response = await rp.getTeamInfoAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getTeamInfoAsync', response);
-    console.log('getTeamInfoAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getTeamChatAsync:');
     response = await rp.getTeamChatAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getTeamChatAsync', response, rustplus.AppResponseError.NoTeam);
-    console.log('getTeamChatAsync: OK');
+    validateAsyncResponse(rp, response, [rustplus.AppResponseError.NoTeam]);
+    console.log(' - OK');
     await delay(500);
 
-    response = await rp.sendTeamMessageAsync(teamMember1SteamId, teamMember1Token, 'Test Message');
-    validateAsyncResponse(rp, 'sendTeamMessageAsync', response);
-    console.log('sendTeamMessageAsync: OK');
+    console.log('Validating sendTeamMessageAsync:');
+    response = await rp.sendTeamMessageAsync(teamMember1SteamId, teamMember1Token, 'Test Team Message');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getEntityInfoAsync: Test Invalid Smart Device:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, 123456789);
+    validateAsyncResponse(rp, response, [rustplus.AppResponseError.NotFound]);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Smart Device:');
     response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, smartSwitch0);
-    //response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor0);
-    //response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, smartAlarm0);
-    validateAsyncResponse(rp, 'getEntityInfoAsync', response);
-    console.log('getEntityInfoAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getEntityInfoAsync: Test Valid Smart Alarm:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, smartAlarm0);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Storage Monitor Tool Cupboard With Power:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor0);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Storage Monitor Vending Machine With Power:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor1);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Storage Monitor Large Wood Box With Power:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor2);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Storage Monitor Tool Cupboard Without Power:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor3);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Storage Monitor Vending Machine Without Power:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor4);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating getEntityInfoAsync: Test Valid Storage Monitor Large Wood Box Without Power:');
+    response = await rp.getEntityInfoAsync(teamMember1SteamId, teamMember1Token, storageMonitor5);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating setEntityValueAsync: Test Set Smart Switch to ON:');
+    response = await rp.setEntityValueAsync(teamMember1SteamId, teamMember1Token, smartSwitch0, true);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
+    await delay(3000);
+
+    console.log('Validating setEntityValueAsync: Test Set Smart Switch to OFF:');
     response = await rp.setEntityValueAsync(teamMember1SteamId, teamMember1Token, smartSwitch0, false);
-    validateAsyncResponse(rp, 'setEntityValueAsync', response);
-    console.log('setEntityValueAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating checkSubscriptionAsync: Test Check on Smart Alarm:');
     response = await rp.checkSubscriptionAsync(teamMember1SteamId, teamMember1Token, smartAlarm0);
-    validateAsyncResponse(rp, 'checkSubscriptionAsync', response);
-    console.log('checkSubscriptionAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating setSubscriptionAsync: Test Subscribe to Smart Alarm:');
+    response = await rp.setSubscriptionAsync(teamMember1SteamId, teamMember1Token, smartAlarm0, true);
+    validateAsyncResponse(rp, response, [rustplus.AppResponseError.TooManySubscribers]);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating setSubscriptionAsync: Test Unsubscribe from Smart Alarm:');
     response = await rp.setSubscriptionAsync(teamMember1SteamId, teamMember1Token, smartAlarm0, false);
-    validateAsyncResponse(rp, 'setSubscriptionAsync', response);
-    console.log('setSubscriptionAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating getMapMarkersAsync:');
     response = await rp.getMapMarkersAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getMapMarkersAsync', response);
-    console.log('getMapMarkersAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating promoteToLeaderAsync: Test Promote Player1 from Player1');
     response = await rp.promoteToLeaderAsync(teamMember1SteamId, teamMember1Token, teamMember1SteamId);
-    validateAsyncResponse(rp, 'promoteToLeaderAsync', response);
-    console.log('promoteToLeaderAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
-    /* Not implemented yet. */
-    response = await rp.getClanInfoAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getClanInfoAsync', response, rustplus.AppResponseError.NoClan);
-    console.log('getClanInfoAsync: OK');
+    console.log('Validating promoteToLeaderAsync: Test Promote Player2 from Player1');
+    response = await rp.promoteToLeaderAsync(teamMember1SteamId, teamMember1Token, teamMember2SteamId);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
-    /* Not implemented yet. */
-    response = await rp.setClanMotdAsync(teamMember1SteamId, teamMember1Token, 'Test Motd');
-    validateAsyncResponse(rp, 'setClanMotdAsync', response, rustplus.AppResponseError.NoClan);
-    console.log('setClanMotdAsync: OK');
+    console.log('Validating that leader was transferred to player2 from Player1:');
+    response = await rp.getTeamInfoAsync(teamMember1SteamId, teamMember1Token);
+    validateAsyncResponse(rp, response);
+    if (((response as rustplus.AppResponse).teamInfo as rustplus.AppTeamInfo).leaderSteamId === teamMember2SteamId) {
+        console.log(' - OK');
+    }
+    else {
+        console.log(' - NOK');
+        rp.disconnect()
+        process.exit(1);
+    }
     await delay(500);
 
-    /* Not implemented yet. */
-    response = await rp.getClanChatAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'getClanChatAsync', response, rustplus.AppResponseError.NoClan);
-    console.log('getClanChatdAsync: OK');
+    console.log('Validating promoteToLeaderAsync: Test Promote Player1 from Player2');
+    response = await rp.promoteToLeaderAsync(teamMember2SteamId, teamMember2Token, teamMember1SteamId);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
-    /* Not implemented yet. */
-    response = await rp.sendClanMessageAsync(teamMember1SteamId, teamMember1Token, 'Test Message');
-    validateAsyncResponse(rp, 'sendClanMessageAsync', response, rustplus.AppResponseError.NoClan);
-    console.log('sendClanMessageAsync: OK');
+    console.log('Validating that leader was transferred to Player1 from Player2:');
+    response = await rp.getTeamInfoAsync(teamMember1SteamId, teamMember1Token);
+    validateAsyncResponse(rp, response);
+    if (((response as rustplus.AppResponse).teamInfo as rustplus.AppTeamInfo).leaderSteamId === teamMember2SteamId) {
+        console.log(' - OK');
+    }
+    else {
+        console.log(' - NOK');
+        rp.disconnect()
+        process.exit(1);
+    }
     await delay(500);
 
-    /* Not implemented yet. */
-    //response = await rp.getNexusAuthAsync(teamMember1SteamId, teamMember1Token, 'Test Application Key');
-    //validateAsyncResponse(rp, 'getNexusAuthAsync', response, rustplus.AppResponseError.NotFound);
-    //console.log('getNexusAuthAsync: OK');
+    /* Not implemented. */
+    //console.log('Validating getClanInfoAsync:');
+    //response = await rp.getClanInfoAsync(teamMember1SteamId, teamMember1Token);
+    //validateAsyncResponse(rp, response);
+    //console.log(' - OK');
     //await delay(500);
 
-    response = await rp.cameraSubscribeAsync(teamMember1SteamId, teamMember1Token, 'Turret1');
-    validateAsyncResponse(rp, 'cameraSubscribeAsync', response);
-    console.log('cameraSubscribeAsync: OK');
+    /* Not implemented. */
+    //console.log('Validating setClanMotdAsync:');
+    //response = await rp.setClanMotdAsync(teamMember1SteamId, teamMember1Token, 'Test Motd');
+    //validateAsyncResponse(rp, response);
+    //console.log(' - OK');
+    //await delay(500);
+
+    /* Not implemented. */
+    //console.log('Validating getClanChatAsync:');
+    //response = await rp.getClanChatAsync(teamMember1SteamId, teamMember1Token);
+    //validateAsyncResponse(rp, response);
+    //console.log(' - OK');
+    //await delay(500);
+
+    /* Not implemented. */
+    //console.log('Validating sendClanMessageAsync:');
+    //response = await rp.sendClanMessageAsync(teamMember1SteamId, teamMember1Token, 'Test Clan Message');
+    //validateAsyncResponse(rp, response);
+    //console.log(' - OK');
+    //await delay(500);
+
+    /* Not implemented. */
+    //console.log('Validating getNexusAuthAsync:');
+    //response = await rp.getNexusAuthAsync(teamMember1SteamId, teamMember1Token, 'Test Application Key');
+    //validateAsyncResponse(rp, response, rustplus.AppResponseError.NotFound);
+    //console.log(' - OK');
+    //await delay(500);
+
+    console.log('Validating cameraSubscribeAsync: CAM1:');
+    response = await rp.cameraSubscribeAsync(teamMember1SteamId, teamMember1Token, 'CAM1');
+    validateAsyncResponse(rp, response, [rustplus.AppResponseError.PlayerOnline]);
+    console.log(' - OK');
     await delay(500);
 
+    console.log('Validating cameraUnsubscribeAsync:');
     response = await rp.cameraUnsubscribeAsync(teamMember1SteamId, teamMember1Token);
-    validateAsyncResponse(rp, 'cameraUnsubscribeAsync', response);
-    console.log('cameraUnsubscribeAsync: OK');
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 
-    response = await rp.cameraSubscribeAsync(teamMember2SteamId, teamMember2Token, 'TestDrone1');
-    validateAsyncResponse(rp, 'cameraSubscribeAsync', response);
-    console.log('cameraSubscribeAsync: OK');
+    console.log('Validating cameraSubscribeAsync: DRONE1:');
+    response = await rp.cameraSubscribeAsync(teamMember1SteamId, teamMember1Token, 'DRONE1');
+    validateAsyncResponse(rp, response, [rustplus.AppResponseError.PlayerOnline]);
+    console.log(' - OK');
     await delay(500);
 
-    response = await rp.cameraInputAsync(teamMember2SteamId, teamMember2Token, 0, 10, 10);
-    validateAsyncResponse(rp, 'cameraInputAsync', response);
-    console.log('cameraInputAsync: OK');
-    //console.log(JSON.stringify((response as rustplus.AppResponse)));
+    console.log('Validating cameraInputAsync: DRONE1:');
+    response = await rp.cameraInputAsync(teamMember1SteamId, teamMember1Token, 0, 10, 10);
+    validateAsyncResponse(rp, response, [rustplus.AppResponseError.NoCamera]);
+    console.log(' - OK');
+    await delay(500);
+
+    console.log('Validating cameraInputAsync:');
+    response = await rp.cameraUnsubscribeAsync(teamMember1SteamId, teamMember1Token);
+    validateAsyncResponse(rp, response);
+    console.log(' - OK');
     await delay(500);
 }
 
@@ -248,33 +382,38 @@ async function test_camera_module(rp: rustplus.RustPlus) {
     await delay(5000);
 }
 
-function validateAsyncResponse(rp: rustplus.RustPlus, funcString: string,
+function validateAsyncResponse(rp: rustplus.RustPlus,
     response: rustplus.AppResponse | Error | rustplus.ConsumeTokensError,
-    allowedResponseError: rustplus.AppResponseError | null = null) {
+    allowedResponseErrors: rustplus.AppResponseError[] = []) {
     if (response instanceof Error) {
-        console.error(`${funcString}: NOK, ${response.message}`);
+        console.error(` - NOK, response === Error: ${response.message}`);
         rp.disconnect()
         process.exit(1);
     }
 
     if (rustplus.isValidConsumeTokensError(response) && response !== rustplus.ConsumeTokensError.NoError) {
-        console.error(`${funcString}: NOK, ConsumeTokensError: ${response}`);
+        console.error(` - NOK, ConsumeTokensError: ${response}`);
         rp.disconnect()
         process.exit(1);
     }
 
     if (rustplus.isValidAppResponse(response)) {
-        if (allowedResponseError !== null && rp.getAppResponseError(response) === allowedResponseError) {
+        const responseError = rp.getAppResponseError(response);
+        if (responseError === rustplus.AppResponseError.NoError) {
             return;
         }
-        else if (rp.getAppResponseError(response) !== rustplus.AppResponseError.NoError) {
-            console.error(`${funcString}: NOK, AppResponseError: ${rp.getAppResponseError(response)}`);
+
+        if (allowedResponseErrors.includes(responseError)) {
+            return;
+        }
+        else {
+            console.error(` - NOK, AppResponseError: ${rp.getAppResponseError(response)}`);
             rp.disconnect()
             process.exit(1);
         }
     }
     else {
-        console.error(`${funcString}: NOK, Unknown error.`);
+        console.error(` - NOK, Unknown error.`);
         rp.disconnect()
         process.exit(1);
     }
