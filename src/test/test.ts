@@ -268,7 +268,7 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
     response = await rp.promoteToLeaderAsync(teamMember1SteamId, teamMember1Token, teamMember2SteamId);
     validateAsyncResponse(rp, response);
     console.log(' - OK');
-    await delay(500);
+    await delay(3000);
 
     console.log('Validating that leader was transferred to player2 from Player1:');
     response = await rp.getTeamInfoAsync(teamMember1SteamId, teamMember1Token);
@@ -287,12 +287,12 @@ async function test_async_api_functions(rp: rustplus.RustPlus) {
     response = await rp.promoteToLeaderAsync(teamMember2SteamId, teamMember2Token, teamMember1SteamId);
     validateAsyncResponse(rp, response);
     console.log(' - OK');
-    await delay(500);
+    await delay(3000);
 
     console.log('Validating that leader was transferred to Player1 from Player2:');
     response = await rp.getTeamInfoAsync(teamMember1SteamId, teamMember1Token);
     validateAsyncResponse(rp, response);
-    if (((response as rustplus.AppResponse).teamInfo as rustplus.AppTeamInfo).leaderSteamId === teamMember2SteamId) {
+    if (((response as rustplus.AppResponse).teamInfo as rustplus.AppTeamInfo).leaderSteamId === teamMember1SteamId) {
         console.log(' - OK');
     }
     else {

@@ -424,30 +424,8 @@ export class RustPlus extends EventEmitter {
                     throw new Error('Received empty or invalid message data.');
                 }
 
-                let messageData: Uint8Array;
-                if (Buffer.isBuffer(data)) {
-                    messageData = new Uint8Array(data);
-                    /* Ensures incoming WebSocket message data is at least 10 bytes long by copying it into a new
-                    zero-padded Uint8Array if it's shorter than expected. This avoids protobufjs RangeError crashes
-                    caused by malformed or truncated binary payloads. */
-                    if (messageData.length < 10) {
-                        const paddedData = new Uint8Array(10);
-                        paddedData.set(messageData)
-                        messageData = paddedData;
-                    }
-                }
-                else if (data instanceof ArrayBuffer) {
-                    messageData = new Uint8Array(data);
-                }
-                else if (typeof data === 'string') {
-                    messageData = new TextEncoder().encode(data);
-                }
-                else {
-                    throw new Error('Unsupported data format.');
-                }
-
                 let handled = false;
-                const appMessage: rpi.AppMessage = rpi.AppMessage.fromBinary(messageData);
+                const appMessage: rpi.AppMessage = rpi.AppMessage.fromBinary(data as any);
 
                 if (appMessage.response && this.seqCallbacks[appMessage.response.seq]) {
                     const callback: CallbackFunction = this.seqCallbacks[appMessage.response.seq];
