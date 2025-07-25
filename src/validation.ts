@@ -1878,7 +1878,7 @@ export function isValidAppBroadcast(object: unknown, logger: Logger | null = nul
     errors.push(Object.hasOwn(obj, 'teamChanged') ?
         validateInterface('teamChanged', obj.teamChanged, logger, isValidAppTeamChanged) : null);
     errors.push(Object.hasOwn(obj, 'teamMessage') ?
-        validateInterface('teamMessage', obj.teamMessage, logger, isValidAppTeamMessage) : null);
+        validateInterface('teamMessage', obj.teamMessage, logger, isValidAppNewTeamMessage) : null);
     errors.push(Object.hasOwn(obj, 'entityChanged') ?
         validateInterface('entityChanged', obj.entityChanged, logger, isValidAppEntityChanged) : null);
     errors.push(Object.hasOwn(obj, 'clanChanged') ?
