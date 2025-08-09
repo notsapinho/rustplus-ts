@@ -468,12 +468,20 @@ export class RustPlus extends EventEmitter {
 
         if (this.ws !== null) {
             this.ws.removeAllListeners();
-            try {
+
+            /* Only terminate if already open */
+            if (this.ws.readyState === WebSocket.CONNECTING) {
+                /* Gentle close during handshake */
+                this.ws.close();
+            }
+            else if (this.ws.readyState === WebSocket.OPEN) {
+                /* Hard terminate when connected */
                 this.ws.terminate();
             }
-            catch (error) {
-                /* Do nothing */
+            else {
+                /* Already closing or closed */
             }
+
             this.ws = null;
             return true;
         }
