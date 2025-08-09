@@ -467,9 +467,8 @@ export class RustPlus extends EventEmitter {
         }
 
         if (this.ws !== null) {
-            this.ws.terminate();
-            await this.delay(100);
             this.ws.removeAllListeners();
+            this.ws.terminate();
             this.ws = null;
             return true;
         }
