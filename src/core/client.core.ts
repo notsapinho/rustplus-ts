@@ -5,12 +5,18 @@ import type { AppResponse } from "../interfaces/rustplus";
 
 import WebSocket from "ws";
 
-import { AppResponseError } from "@/errors/app-response.error";
 import { ConsumeTokensError } from "@/errors/consume-tokens.error";
 import { CameraService } from "@/services/camera.service";
 import { EntityService } from "@/services/entity.service";
 import { ServerService } from "@/services/server.service";
+import { TeamService } from "@/services/team.service";
+import { isValidAppResponse } from "@/utils/is-app-response.util";
+import { sleep } from "@/utils/sleep.util";
 import { AppMessage, AppRequest } from "../interfaces/rustplus";
+import { Camera } from "./structures/camera.structure";
+import { ServerInfo } from "./structures/server-info.structure";
+import { Team } from "./structures/team.structure";
+import { Time } from "./structures/time.structure";
 
 export enum EmitErrorType {
     WebSocket = 0,
@@ -19,7 +25,7 @@ export enum EmitErrorType {
 
 type CallbackFunction = (appMessage: AppMessage) => void;
 
-type RustPlusEvents = {
+type ClientEvents = {
     connecting: () => void;
     connected: () => void;
     message: (appMessage: AppMessage, handled: boolean) => void;
@@ -28,7 +34,7 @@ type RustPlusEvents = {
     error: (type: EmitErrorType, error: Error) => void;
 };
 
-export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlusEvents>) {
+export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientEvents>) {
     private static readonly MAX_REQUESTS_PER_IP_ADDRESS = 50;
     private static readonly REQUESTS_PER_IP_REPLENISH_RATE = 15;
     private static readonly MAX_REQUESTS_PER_PLAYER_ID = 25;
@@ -36,23 +42,31 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
     private static readonly MAX_REQUESTS_FOR_SERVER_PAIRING = 5;
     private static readonly REQUESTS_FOR_SERVER_PAIRING_REPLENISH_RATE = 0.1;
 
-    private seq: number;
-    private seqCallbacks: CallbackFunction[];
-
-    private ws: WebSocket | null;
-
+    private seq = 0;
+    private seqCallbacks: CallbackFunction[] = [];
+    private ws: WebSocket | null = null;
+    private replenishInterval: NodeJS.Timeout | null = null;
     private tokens: {
         connection: number;
         player: number;
         serverPairing: number;
+    } = {
+        connection: Client.MAX_REQUESTS_PER_IP_ADDRESS,
+        player: Client.MAX_REQUESTS_PER_PLAYER_ID,
+        serverPairing: Client.MAX_REQUESTS_FOR_SERVER_PAIRING
     };
 
-    private replenishInterval: NodeJS.Timeout | null;
+    private poolInterval: NodeJS.Timeout | null = null;
 
-    public camera = new CameraService(this);
-    public entity = new EntityService(this);
-    public server = new ServerService(this);
-    public team = new EntityService(this);
+    public cameraService = new CameraService(this);
+    public entityService = new EntityService(this);
+    public serverService = new ServerService(this);
+    public teamService = new TeamService(this);
+
+    public connectedCamera: Camera | null = null;
+    public team: Team | null = null;
+    public serverInfo: ServerInfo | null = null;
+    public time: Time | null = null;
 
     constructor(
         public ip: string,
@@ -62,22 +76,6 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         public useFacepunchProxy = false
     ) {
         super();
-
-        this.ip = ip;
-        this.port = port;
-        this.useFacepunchProxy = useFacepunchProxy;
-
-        this.seq = 0;
-        this.seqCallbacks = [];
-
-        this.ws = null;
-
-        this.tokens = {
-            connection: Client.MAX_REQUESTS_PER_IP_ADDRESS,
-            player: Client.MAX_REQUESTS_PER_PLAYER_ID,
-            serverPairing: Client.MAX_REQUESTS_FOR_SERVER_PAIRING
-        };
-        this.replenishInterval = null;
     }
 
     private replenishTask() {
@@ -117,10 +115,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         }
     }
 
-    public async consumeTokens({
-        tokens,
-        timeout
-    }: ServiceRequestCost): Promise<ConsumeTokensError> {
+    public async consumeTokens({ tokens, timeout }: ServiceRequestCost) {
         const startTime = Date.now();
 
         const hasEnoughTokens = () =>
@@ -143,17 +138,13 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
                 return ConsumeTokensError.WaitReplenishTimeout;
             }
 
-            await this.delay(100);
+            await sleep(100);
         }
 
         this.tokens.connection -= tokens;
         this.tokens.player -= tokens;
 
         return ConsumeTokensError.NoError;
-    }
-
-    private delay(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     private getNextSeq(): number {
@@ -167,7 +158,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         return nextSeq;
     }
 
-    async connect(): Promise<boolean> {
+    public async connect() {
         if (this.ws !== null) {
             await this.disconnect();
         }
@@ -240,9 +231,13 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         return true;
     }
 
-    async disconnect(): Promise<boolean> {
+    public async disconnect() {
         if (this.replenishInterval) {
             clearInterval(this.replenishInterval);
+        }
+
+        if (this.poolInterval) {
+            clearInterval(this.poolInterval);
         }
 
         if (this.ws !== null) {
@@ -264,7 +259,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         }
     }
 
-    isConnected(): boolean {
+    public get isConnected(): boolean {
         return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
     }
 
@@ -286,7 +281,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         let appRequestData: AppRequest;
         try {
             appRequestData = {
-                seq: seq,
+                seq,
                 playerId: this.playerId,
                 playerToken: this.playerToken,
                 ...data
@@ -368,69 +363,61 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
         });
     }
 
-    public getAppResponseError(appResponse: AppResponse): AppResponseError {
-        if (!appResponse.error) {
-            return AppResponseError.NoError;
+    public async connectToCamera(identifier: string) {
+        const camera = new Camera(this, identifier);
+
+        const subscribed = await camera.subscribe();
+
+        if (!subscribed) return null;
+
+        if (this.connectedCamera)
+            // TODO: Create and use a specific error for this
+            throw new Error(
+                "A camera is already connected. Please disconnect it before connecting to another camera."
+            );
+
+        this.connectedCamera = camera;
+
+        return camera;
+    }
+
+    public async startPoolInterval() {
+        if (this.poolInterval) return;
+
+        await this.pool();
+
+        this.poolInterval = setInterval(() => {
+            void this.pool();
+        }, 10000);
+    }
+
+    private async pool() {
+        if (!this.isConnected) {
+            throw new Error("Client is not connected.");
         }
 
-        switch (appResponse.error.error) {
-            case "server_error": {
-                return AppResponseError.ServerError;
-            }
-            case "banned": {
-                return AppResponseError.Banned;
-            }
-            case "rate_limit": {
-                return AppResponseError.RateLimit;
-            }
-            case "not_found": {
-                return AppResponseError.NotFound;
-            }
-            case "wrong_type": {
-                return AppResponseError.WrongType;
-            }
-            case "no_team": {
-                return AppResponseError.NoTeam;
-            }
-            case "no_clan": {
-                return AppResponseError.NoClan;
-            }
-            case "no_map": {
-                return AppResponseError.NoMap;
-            }
-            case "no_camera": {
-                return AppResponseError.NoCamera;
-            }
-            case "no_player": {
-                return AppResponseError.NoPlayer;
-            }
-            case "access_denied": {
-                return AppResponseError.AccessDenied;
-            }
-            case "player_online": {
-                return AppResponseError.PlayerOnline;
-            }
-            case "invalid_playerid": {
-                return AppResponseError.InvalidPlayerid;
-            }
-            case "invalid_id": {
-                return AppResponseError.InvalidId;
-            }
-            case "invalid_motd": {
-                return AppResponseError.InvalidMotd;
-            }
-            case "too_many_subscribers": {
-                return AppResponseError.TooManySubscribers;
-            }
-            case "not_enabled": {
-                return AppResponseError.NotEnabled;
-            }
-            case "message_not_sent": {
-                return AppResponseError.MessageNotSent;
-            }
-            default: {
-                return AppResponseError.Unknown;
-            }
-        }
+        const time = await this.serverService.getTime();
+
+        if (!isValidAppResponse(time))
+            throw new Error(`Failed to get time: ${time}`);
+
+        if (this.time) this.time.update(time.time);
+        else this.time = new Time(time.time);
+
+        const serverInfo = await this.serverService.getInfo();
+
+        if (!isValidAppResponse(serverInfo))
+            throw new Error(`Failed to get server info: ${serverInfo}`);
+
+        if (this.serverInfo) this.serverInfo.update(serverInfo.info);
+        else this.serverInfo = new ServerInfo(serverInfo.info);
+
+        const team = await this.teamService.getInfo();
+
+        if (!isValidAppResponse(team))
+            throw new Error(`Failed to get team info: ${team}`);
+
+        if (this.team) this.team.update(team.teamInfo);
+        else this.team = new Team(team.teamInfo);
     }
 }

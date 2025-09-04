@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { inspect } from "util";
 
 //TODO: Type this properly
@@ -18,11 +20,19 @@ const bootstrap = async () => {
         console.log("Push data received:", inspect(data, { depth: null }));
     });
 
-    const client = new Client(serverIp, serverPort, "", 0);
+    const client = new Client(
+        serverIp,
+        serverPort,
+        process.env.PLAYER_ID,
+        Number(process.env.PLAYER_TOKEN)
+    );
 
     client.on("connected", async () => {
         console.log("Connected to server");
+
+        await client.startPoolInterval();
     });
+
     client.on("message", (message) => {
         console.log("Message:", message);
     });

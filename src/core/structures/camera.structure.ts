@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import type {
     AppCameraInfo,
     AppCameraRays,
+    AppMessage,
     AppResponse
 } from "@/interfaces/rustplus";
 import type { Client } from "../client.core";
@@ -72,38 +73,44 @@ export function getCameraType(controlFlags: number): CameraType {
 }
 
 export class Camera extends EventEmitter {
-    public identifier = "";
     private isSubscribed = false;
 
     private cameraType: CameraType = CameraType.UNKNOWN;
     private cameraRays: AppCameraRays[] = [];
     private cameraSubscribeInfo: AppCameraInfo | null = null;
 
-    constructor(public client: Client) {
+    constructor(
+        public client: Client,
+        public identifier: string
+    ) {
         super();
 
-        this.client.on("message", async (appMessage) => {
-            if (this.isSubscribed && appMessage.broadcast?.cameraRays) {
-                this.cameraRays.push(appMessage.broadcast.cameraRays);
+        this.client.on("message", this.onMessage.bind(this));
 
-                if (this.cameraRays.length > 10) {
-                    this.cameraRays.shift();
-
-                    const image = await this.renderCameraFrame();
-
-                    this.emit("render", image);
-                }
-            }
-        });
-
-        this.client.on("disconnected", async () => {
-            if (this.isSubscribed) {
-                await this.unsubscribe();
-            }
-        });
+        this.client.once("disconnected", this.onDisconnected.bind(this));
     }
 
-    private async renderCameraFrame(): Promise<Buffer> {
+    private async onMessage(appMessage: AppMessage) {
+        if (this.isSubscribed && appMessage.broadcast?.cameraRays) {
+            this.cameraRays.push(appMessage.broadcast.cameraRays);
+
+            if (this.cameraRays.length > 10) {
+                this.cameraRays.shift();
+
+                const image = await this.renderCameraFrame();
+
+                this.emit("render", image);
+            }
+        }
+    }
+
+    private async onDisconnected() {
+        if (this.isSubscribed) {
+            await this.unsubscribe();
+        }
+    }
+
+    private async renderCameraFrame() {
         const frames = this.cameraRays;
         const width = this.cameraSubscribeInfo.width;
         const height = this.cameraSubscribeInfo.height;
@@ -273,11 +280,11 @@ export class Camera extends EventEmitter {
         return await image.getBuffer(jimp.JimpMime.png);
     }
 
-    public async subscribe(identifier: string) {
+    public async subscribe() {
         this.emit("subscribing");
 
-        const response = (await this.client.camera.subscribe(
-            identifier
+        const response = (await this.client.cameraService.subscribe(
+            this.identifier
         )) as AppResponse;
 
         if (!response.cameraSubscribeInfo) {
@@ -285,20 +292,27 @@ export class Camera extends EventEmitter {
             return;
         }
 
-        this.identifier = identifier;
         this.isSubscribed = true;
         this.cameraRays = [];
         this.cameraSubscribeInfo = response.cameraSubscribeInfo;
         this.cameraType = getCameraType(this.cameraSubscribeInfo.controlFlags);
 
         this.emit("subscribed");
+
+        return true;
     }
 
-    async unsubscribe(): Promise<boolean> {
+    public async unsubscribe() {
         this.emit("unsubscribing");
 
-        if (this.client.isConnected()) {
-            await this.client.camera.unsubscribe();
+        this.client.removeListener("message", this.onMessage.bind(this));
+        this.client.removeListener(
+            "disconnected",
+            this.onDisconnected.bind(this)
+        );
+
+        if (this.client.isConnected) {
+            await this.client.cameraService.unsubscribe();
         }
 
         this.identifier = "";
@@ -312,7 +326,7 @@ export class Camera extends EventEmitter {
         return true;
     }
 
-    async zoom(): Promise<boolean> {
+    public async zoom(): Promise<boolean> {
         if (
             !this.isSubscribed ||
             this.cameraType !== CameraType.PTZ_CCTV_CAMERA
@@ -321,10 +335,10 @@ export class Camera extends EventEmitter {
         }
 
         /* Press left mouse button to zoom in. */
-        await this.client.camera.input(Buttons.FIRE_PRIMARY, 0, 0);
+        await this.client.cameraService.input(Buttons.FIRE_PRIMARY, 0, 0);
 
         /* Release all mouse buttons. */
-        await this.client.camera.input(Buttons.NONE, 0, 0);
+        await this.client.cameraService.input(Buttons.NONE, 0, 0);
 
         return true;
     }
@@ -335,10 +349,10 @@ export class Camera extends EventEmitter {
         }
 
         /* Press left mouse button to shoot. */
-        await this.client.camera.input(Buttons.FIRE_PRIMARY, 0, 0);
+        await this.client.cameraService.input(Buttons.FIRE_PRIMARY, 0, 0);
 
         /* Release all mouse buttons. */
-        await this.client.camera.input(Buttons.NONE, 0, 0);
+        await this.client.cameraService.input(Buttons.NONE, 0, 0);
 
         return true;
     }
@@ -349,10 +363,10 @@ export class Camera extends EventEmitter {
         }
 
         /* Press left mouse button to shoot. */
-        await this.client.camera.input(Buttons.RELOAD, 0, 0);
+        await this.client.cameraService.input(Buttons.RELOAD, 0, 0);
 
         /* Release all mouse buttons. */
-        await this.client.camera.input(Buttons.NONE, 0, 0);
+        await this.client.cameraService.input(Buttons.NONE, 0, 0);
 
         return true;
     }
