@@ -273,7 +273,6 @@ export class RustPlus extends (EventEmitter as new () => TypedEventEmitter<RustP
      * Function that replenish the connection tokens.
      */
     private replenishConnectionTokens() {
-        /* Replenish tokens for requests per ip. */
         if (this.tokens.connection < RustPlus.MAX_REQUESTS_PER_IP_ADDRESS) {
             this.tokens.connection = Math.min(
                 this.tokens.connection +
@@ -287,7 +286,6 @@ export class RustPlus extends (EventEmitter as new () => TypedEventEmitter<RustP
      * Function that replenish the playerId tokens.
      */
     private replenishPlayerIdTokens() {
-        /* Replenish tokens for requests per player id. */
         for (const playerId in this.tokens.playerId) {
             if (
                 this.tokens.playerId[playerId] <
@@ -306,7 +304,6 @@ export class RustPlus extends (EventEmitter as new () => TypedEventEmitter<RustP
      * Function that replenish the server pairing tokens.
      */
     private replenishServerPairingTokens() {
-        /* Replenish tokens for requests for server pairing. */
         if (
             this.tokens.serverPairing < RustPlus.MAX_REQUESTS_FOR_SERVER_PAIRING
         ) {
@@ -341,25 +338,20 @@ export class RustPlus extends (EventEmitter as new () => TypedEventEmitter<RustP
 
         const startTime = Date.now();
 
-        /* Function to check whether there are enough tokens available from connection and playerId. */
-        const hasEnoughTokens = () => {
-            return (
-                this.tokens.connection >= tokens &&
-                this.tokens.playerId[playerId] >= tokens
-            );
-        };
+        const hasEnoughTokens = () =>
+            this.tokens.connection >= tokens &&
+            this.tokens.playerId[playerId] >= tokens;
 
         if (!waitForReplenish && !hasEnoughTokens()) {
-            if (this.tokens.connection >= tokens) {
+            if (this.tokens.connection < tokens) {
                 return ConsumeTokensError.NotEnoughConnectionTokens;
-            } else if (this.tokens.playerId[playerId] >= tokens) {
+            } else if (this.tokens.playerId[playerId] < tokens) {
                 return ConsumeTokensError.NotEnoughPlayerIdTokens;
             } else {
                 return ConsumeTokensError.Unknown;
             }
         }
 
-        /* Wait until there are enough tokens or the timeout is reached */
         while (!hasEnoughTokens()) {
             const elapsedTime = Date.now() - startTime;
 
