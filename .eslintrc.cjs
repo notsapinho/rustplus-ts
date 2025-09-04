@@ -40,7 +40,7 @@ const config = {
         "@typescript-eslint/class-literal-property-style": "off",
         "@typescript-eslint/no-unsafe-argument": "off",
         "@typescript-eslint/prefer-nullish-coalescing": "off",
-        "@typescript-eslint/consistent-type-imports": "error",
+        "@typescript-eslint/no-misused-promises": "off",
     }
 };
 

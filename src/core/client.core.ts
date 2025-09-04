@@ -1,0 +1,429 @@
+import { EventEmitter } from "events";
+import type { ServiceRequestCost } from "@/types/cost.type";
+import type TypedEventEmitter from "typed-emitter";
+import type { AppResponse } from "../interfaces/rustplus";
+
+import WebSocket from "ws";
+
+import { AppResponseError } from "@/errors/app-response.error";
+import { ConsumeTokensError } from "@/errors/consume-tokens.error";
+import { AppMessage, AppRequest } from "../interfaces/rustplus";
+
+export enum EmitErrorType {
+    WebSocket = 0,
+    Callback = 1
+}
+
+export interface RustPlusRequestTokens {
+    connection: number;
+    player: number;
+    serverPairing: number;
+}
+
+type CallbackFunction = (appMessage: AppMessage) => void;
+
+type RustPlusEvents = {
+    connecting: () => void;
+    connected: () => void;
+    message: (appMessage: AppMessage, handled: boolean) => void;
+    request: (appRequest: AppRequest) => void;
+    disconnected: () => void;
+    error: (type: EmitErrorType, error: Error) => void;
+};
+
+export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlusEvents>) {
+    private static readonly MAX_REQUESTS_PER_IP_ADDRESS = 50;
+    private static readonly REQUESTS_PER_IP_REPLENISH_RATE = 15;
+    private static readonly MAX_REQUESTS_PER_PLAYER_ID = 25;
+    private static readonly REQUESTS_PER_PLAYER_ID_REPLENISH_RATE = 3;
+    private static readonly MAX_REQUESTS_FOR_SERVER_PAIRING = 5;
+    private static readonly REQUESTS_FOR_SERVER_PAIRING_REPLENISH_RATE = 0.1;
+
+    private seq: number;
+    private seqCallbacks: CallbackFunction[];
+
+    private ws: WebSocket | null;
+
+    private tokens: RustPlusRequestTokens;
+    private replenishInterval: NodeJS.Timeout | null;
+
+    constructor(
+        public ip: string,
+        public port: string,
+        public playerId: string,
+        public playerToken: number,
+        public useFacepunchProxy = false
+    ) {
+        super();
+
+        this.ip = ip;
+        this.port = port;
+        this.useFacepunchProxy = useFacepunchProxy;
+
+        this.seq = 0;
+        this.seqCallbacks = [];
+
+        this.ws = null;
+
+        this.tokens = {
+            connection: Client.MAX_REQUESTS_PER_IP_ADDRESS,
+            player: Client.MAX_REQUESTS_PER_PLAYER_ID,
+            serverPairing: Client.MAX_REQUESTS_FOR_SERVER_PAIRING
+        };
+        this.replenishInterval = null;
+    }
+
+    private replenishTask() {
+        this.replenishConnectionTokens();
+        this.replenishPlayerTokens();
+        this.replenishServerPairingTokens();
+    }
+
+    private replenishConnectionTokens() {
+        if (this.tokens.connection < Client.MAX_REQUESTS_PER_IP_ADDRESS) {
+            this.tokens.connection = Math.min(
+                this.tokens.connection + Client.REQUESTS_PER_IP_REPLENISH_RATE,
+                Client.MAX_REQUESTS_PER_IP_ADDRESS
+            );
+        }
+    }
+
+    private replenishPlayerTokens() {
+        if (this.tokens.player < Client.MAX_REQUESTS_PER_PLAYER_ID) {
+            this.tokens.player = Math.min(
+                this.tokens.player +
+                    Client.REQUESTS_PER_PLAYER_ID_REPLENISH_RATE,
+                Client.MAX_REQUESTS_PER_PLAYER_ID
+            );
+        }
+    }
+
+    private replenishServerPairingTokens() {
+        if (
+            this.tokens.serverPairing < Client.MAX_REQUESTS_FOR_SERVER_PAIRING
+        ) {
+            this.tokens.serverPairing = Math.min(
+                this.tokens.serverPairing +
+                    Client.REQUESTS_FOR_SERVER_PAIRING_REPLENISH_RATE,
+                Client.MAX_REQUESTS_FOR_SERVER_PAIRING
+            );
+        }
+    }
+
+    public async consumeTokens({
+        tokens,
+        timeout
+    }: ServiceRequestCost): Promise<ConsumeTokensError> {
+        const startTime = Date.now();
+
+        const hasEnoughTokens = () =>
+            this.tokens.connection >= tokens && this.tokens.player >= tokens;
+
+        if (!hasEnoughTokens()) {
+            if (this.tokens.connection < tokens) {
+                return ConsumeTokensError.NotEnoughConnectionTokens;
+            } else if (this.tokens.player < tokens) {
+                return ConsumeTokensError.NotEnoughPlayerIdTokens;
+            } else {
+                return ConsumeTokensError.Unknown;
+            }
+        }
+
+        while (!hasEnoughTokens()) {
+            const elapsedTime = Date.now() - startTime;
+
+            if (elapsedTime >= timeout) {
+                return ConsumeTokensError.WaitReplenishTimeout;
+            }
+
+            await this.delay(100);
+        }
+
+        this.tokens.connection -= tokens;
+        this.tokens.player -= tokens;
+
+        return ConsumeTokensError.NoError;
+    }
+
+    private delay(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    private getNextSeq(): number {
+        let nextSeq = this.seq + 1;
+
+        while (this.seqCallbacks[nextSeq]) {
+            nextSeq++;
+        }
+
+        this.seq = nextSeq;
+        return nextSeq;
+    }
+
+    async connect(): Promise<boolean> {
+        if (this.ws !== null) {
+            await this.disconnect();
+        }
+
+        this.emit("connecting");
+
+        this.ws = new WebSocket(
+            this.useFacepunchProxy
+                ? `wss://companion-rust.facepunch.com/game/${this.ip}/${this.port}`
+                : `ws://${this.ip}:${this.port}`
+        );
+
+        this.ws.on("open", () => {
+            this.emit("connected");
+        });
+        this.ws.on("close", () => {
+            this.emit("disconnected");
+        });
+        this.ws.on("error", (e) => {
+            this.emit("error", EmitErrorType.WebSocket, e);
+        });
+        this.ws.on("message", (data: WebSocket.Data) => {
+            try {
+                if (!data) {
+                    throw new Error("Received empty or invalid message data.");
+                }
+
+                let handled = false;
+                const appMessage = AppMessage.fromBinary(data as Buffer);
+
+                if (
+                    appMessage.response &&
+                    this.seqCallbacks[appMessage.response.seq]
+                ) {
+                    const callback: CallbackFunction =
+                        this.seqCallbacks[appMessage.response.seq];
+
+                    try {
+                        callback(appMessage);
+                        handled = true;
+                    } catch (callbackError) {
+                        const errorMessage =
+                            callbackError instanceof Error
+                                ? callbackError.message
+                                : "Unknown error";
+                        this.emit(
+                            "error",
+                            EmitErrorType.Callback,
+                            new Error(`ERROR on.message: ${errorMessage}`)
+                        );
+                    } finally {
+                        this.seqCallbacks.splice(appMessage.response.seq, 1);
+                    }
+                }
+
+                this.emit("message", appMessage, handled);
+            } catch (error) {
+                const errorMessage =
+                    error instanceof Error ? error.message : "Unknown error";
+                this.emit(
+                    "error",
+                    EmitErrorType.Callback,
+                    new Error(`ERROR on.message: ${errorMessage}`)
+                );
+            }
+        });
+
+        this.replenishInterval = setInterval(() => this.replenishTask(), 1000);
+
+        return true;
+    }
+
+    async disconnect(): Promise<boolean> {
+        if (this.replenishInterval) {
+            clearInterval(this.replenishInterval);
+        }
+
+        if (this.ws !== null) {
+            this.ws.removeAllListeners();
+            this.ws.on("error", () => {
+                /* Do nothing */
+            });
+
+            try {
+                this.ws.terminate();
+            } catch (error) {
+                console.error(error);
+            }
+
+            this.ws = null;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    isConnected(): boolean {
+        return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+    }
+
+    public sendRequest(
+        data: Omit<AppRequest, "seq" | "playerId" | "playerToken">,
+        callback: CallbackFunction,
+        seq: number | null = null
+    ) {
+        if (this.ws === null || this.ws.readyState !== WebSocket.OPEN) {
+            return new Error("ERROR sendRequest: WebSocket is not open.");
+        }
+
+        if (seq === null) {
+            seq = this.getNextSeq();
+        }
+
+        this.seqCallbacks[seq] = callback;
+
+        let appRequestData: AppRequest;
+        try {
+            appRequestData = {
+                seq: seq,
+                playerId: this.playerId,
+                playerToken: this.playerToken,
+                ...data
+            };
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
+            this.seqCallbacks.splice(seq, 1);
+            return new Error(`ERROR sendRequest: ${errorMessage}`);
+        }
+
+        let appRequest: Uint8Array;
+        try {
+            appRequest = AppRequest.toBinary(appRequestData);
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
+            this.seqCallbacks.splice(seq, 1);
+            return new Error(
+                `ERROR sendRequest AppRequest.toBinary: ${errorMessage}`
+            );
+        }
+
+        try {
+            this.ws.send(appRequest);
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
+            this.seqCallbacks.splice(seq, 1);
+            return new Error(`ERROR sendRequest ws.send: ${errorMessage}`);
+        }
+
+        this.emit("request", appRequestData);
+    }
+
+    public sendRequestAsync(
+        data: Omit<AppRequest, "seq" | "playerId" | "playerToken">,
+        timeoutMs: number
+    ) {
+        return new Promise<AppResponse | Error>((resolve) => {
+            const seq = this.getNextSeq();
+
+            const timeout = setTimeout(() => {
+                this.seqCallbacks.splice(seq, 1);
+                resolve(
+                    new Error("Timeout reached while waiting for response.")
+                );
+            }, timeoutMs);
+
+            const result = this.sendRequest(
+                data,
+                (appMessage: AppMessage) => {
+                    clearTimeout(timeout);
+
+                    try {
+                        if (!appMessage.response) {
+                            throw new Error("appMessage is missing response.");
+                        }
+
+                        resolve(appMessage.response);
+                    } catch (error) {
+                        const errorMessage =
+                            error instanceof Error
+                                ? error.message
+                                : "Unknown error";
+
+                        resolve(
+                            new Error(`ERROR sendRequestAsync: ${errorMessage}`)
+                        );
+                    }
+                },
+                seq
+            );
+
+            if (result instanceof Error) {
+                clearTimeout(timeout);
+                resolve(result);
+            }
+        });
+    }
+
+    public getAppResponseError(appResponse: AppResponse): AppResponseError {
+        if (!appResponse.error) {
+            return AppResponseError.NoError;
+        }
+
+        switch (appResponse.error.error) {
+            case "server_error": {
+                return AppResponseError.ServerError;
+            }
+            case "banned": {
+                return AppResponseError.Banned;
+            }
+            case "rate_limit": {
+                return AppResponseError.RateLimit;
+            }
+            case "not_found": {
+                return AppResponseError.NotFound;
+            }
+            case "wrong_type": {
+                return AppResponseError.WrongType;
+            }
+            case "no_team": {
+                return AppResponseError.NoTeam;
+            }
+            case "no_clan": {
+                return AppResponseError.NoClan;
+            }
+            case "no_map": {
+                return AppResponseError.NoMap;
+            }
+            case "no_camera": {
+                return AppResponseError.NoCamera;
+            }
+            case "no_player": {
+                return AppResponseError.NoPlayer;
+            }
+            case "access_denied": {
+                return AppResponseError.AccessDenied;
+            }
+            case "player_online": {
+                return AppResponseError.PlayerOnline;
+            }
+            case "invalid_playerid": {
+                return AppResponseError.InvalidPlayerid;
+            }
+            case "invalid_id": {
+                return AppResponseError.InvalidId;
+            }
+            case "invalid_motd": {
+                return AppResponseError.InvalidMotd;
+            }
+            case "too_many_subscribers": {
+                return AppResponseError.TooManySubscribers;
+            }
+            case "not_enabled": {
+                return AppResponseError.NotEnabled;
+            }
+            case "message_not_sent": {
+                return AppResponseError.MessageNotSent;
+            }
+            default: {
+                return AppResponseError.Unknown;
+            }
+        }
+    }
+}

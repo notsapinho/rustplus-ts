@@ -29,7 +29,8 @@
         "**/*.js",
         "**/*.jsx",
         "**/*.tsx",
-        ".eslintrc.cjs"
+        ".eslintrc.cjs",
+        "src/services/entity.service.ts"
     ],
     "exclude": ["node_modules", "dist"]
 }

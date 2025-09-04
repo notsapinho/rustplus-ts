@@ -3,7 +3,7 @@ import { inspect } from "util";
 //TODO: Type this properly
 import PushReceiverClient from "@liamcottle/push-receiver/src/client";
 
-import { RustPlus } from "./core/rustplus";
+import { Client } from "./core/client.core";
 
 const gcmAndroidId = "";
 const gcmSecurityToken = "";
@@ -18,7 +18,7 @@ const bootstrap = async () => {
         console.log("Push data received:", inspect(data, { depth: null }));
     });
 
-    const client = new RustPlus(serverIp, serverPort);
+    const client = new Client(serverIp, serverPort, "", 0);
 
     client.on("connected", async () => {
         console.log("Connected to server");
