@@ -1,24 +1,37 @@
-/*
-    Copyright (C) 2025 Alexander Emanuelsson (alexemanuelol)
+import { inspect } from "util";
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+//TODO: Type this properly
+import PushReceiverClient from "@liamcottle/push-receiver/src/client";
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+import { RustPlus } from "./core/rustplus";
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+const gcmAndroidId = "";
+const gcmSecurityToken = "";
+const serverIp = "131.196.198.41";
+const serverPort = "28082";
 
-    https://github.com/alexemanuelol/rustplus-ts
+const bootstrap = async () => {
+    const push = new PushReceiverClient(gcmAndroidId, gcmSecurityToken, []);
 
-*/
+    // TODO: Type this properly
+    push.on("ON_DATA_RECEIVED", (data: any) => {
+        console.log("Push data received:", inspect(data, { depth: null }));
+    });
 
-export * from './interfaces/rustplus';
-export * from './validation';
-export * from './rustplus';
-export * from './camera';
+    const client = new RustPlus(serverIp, serverPort);
+
+    client.on("connected", async () => {
+        console.log("Connected to server");
+    });
+    client.on("message", (message) => {
+        console.log("Message:", message);
+    });
+
+    client.on("error", async (errorType, error: any) => {
+        console.log(`Type: ${errorType}, Error: ${error.message}`);
+    });
+
+    await client.connect();
+};
+
+void bootstrap();

@@ -1,31 +1,16 @@
-/*
-    Copyright (C) 2025 Alexander Emanuelsson (alexemanuelol)
+"use strict";
 
-    This program is free software = you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+import { EventEmitter } from "events";
+import type {
+    AppCameraInfo,
+    AppCameraRays,
+    AppMessage
+} from "../interfaces/rustplus";
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+import * as jimp from "jimp";
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https =//www.gnu.org/licenses/>.
-
-    https://github.com/alexemanuelol/rustplus-ts
-
-*/
-
-'use strict'
-
-import { EventEmitter } from 'events';
-import * as jimp from 'jimp';
-
-import * as rpi from './interfaces/rustplus';
-import * as rp from './rustplus';
-import * as validation from './validation';
+import { isValidAppResponse } from "../utils/validation.util";
+import { AppResponseError, RustPlus } from "./rustplus";
 
 /**
  * The buttons that can be sent to the server.
@@ -92,19 +77,18 @@ export function getCameraType(controlFlags: number): CameraType {
 }
 
 export class Camera extends EventEmitter {
-
-    private rustplus: rp.RustPlus;
-    private identifier: string;
+    private rustplus: RustPlus;
+    public identifier: string;
     private cameraType: CameraType;
     private playerId: string;
     private playerToken: number;
     private isSubscribed: boolean;
 
-    private cameraRays: rpi.AppCameraRays[];
-    private cameraSubscribeInfo: rpi.AppCameraInfo | null;
+    private cameraRays: AppCameraRays[];
+    private cameraSubscribeInfo: AppCameraInfo | null;
 
     /**
-     * @param {rp.RustPlus} rustplus An existing RustPlus instance.
+     * @param {RustPlus} rustplus An existing RustPlus instance.
      *
      * Events emitted by the Camera class instance
      * - subscribing: When we are subscribing to a Camera.
@@ -113,12 +97,12 @@ export class Camera extends EventEmitter {
      * - unsubscribed: When we are unsubscribed from the Camera.
      * - render: When a camera frame has been rendered. A png image buffer will be provided.
      */
-    constructor(rustplus: rp.RustPlus) {
+    constructor(rustplus: RustPlus) {
         super();
 
         this.rustplus = rustplus;
-        this.identifier = '';
-        this.playerId = '';
+        this.identifier = "";
+        this.playerId = "";
         this.playerToken = 0;
         this.isSubscribed = false;
 
@@ -126,24 +110,31 @@ export class Camera extends EventEmitter {
         this.cameraSubscribeInfo = null;
         this.cameraType = CameraType.UNKNOWN;
 
-        this.rustplus.on('message', async (appMessage: rpi.AppMessage, handled: boolean) => {
-            if (this.isSubscribed && appMessage.broadcast && appMessage.broadcast.cameraRays) {
-                /* Add new camera rays to cache. */
-                this.cameraRays.push(appMessage.broadcast.cameraRays);
+        this.rustplus.on(
+            "message",
+            async (appMessage: AppMessage, handled: boolean) => {
+                if (
+                    this.isSubscribed &&
+                    appMessage.broadcast &&
+                    appMessage.broadcast.cameraRays
+                ) {
+                    /* Add new camera rays to cache. */
+                    this.cameraRays.push(appMessage.broadcast.cameraRays);
 
-                if (this.cameraRays.length > 10) {
-                    /* Remove oldest camera rays. */
-                    this.cameraRays.shift();
+                    if (this.cameraRays.length > 10) {
+                        /* Remove oldest camera rays. */
+                        this.cameraRays.shift();
 
-                    /* Render to png. */
-                    const image = await this.renderCameraFrame();
+                        /* Render to png. */
+                        const image = await this.renderCameraFrame();
 
-                    this.emit('render', image);
+                        this.emit("render", image);
+                    }
                 }
             }
-        });
+        );
 
-        this.rustplus.on('disconnected', async () => {
+        this.rustplus.on("disconnected", async () => {
             if (this.isSubscribed) {
                 await this.unsubscribe();
             }
@@ -156,8 +147,8 @@ export class Camera extends EventEmitter {
      */
     private async renderCameraFrame(): Promise<Buffer> {
         const frames = this.cameraRays;
-        const width = (this.cameraSubscribeInfo as rpi.AppCameraInfo).width;
-        const height = (this.cameraSubscribeInfo as rpi.AppCameraInfo).height;
+        const width = this.cameraSubscribeInfo.width;
+        const height = this.cameraSubscribeInfo.height;
 
         /* First we populate the samplePositionBuffer with the positions of each sample. */
         const samplePositionBuffer = new Int16Array(width * height * 2);
@@ -214,15 +205,17 @@ export class Camera extends EventEmitter {
                     const l = rayData[dataPointer++];
                     const o = rayData[dataPointer++];
                     const s = rayData[dataPointer++];
-                    const u = (3 * (((t = (l << 2) | (o >> 6)) / 128) | 0) + 5 *
-                        (((r = 63 & o) / 16) | 0) + 7 * (i = s)) & 63;
+                    const u =
+                        (3 * (((t = (l << 2) | (o >> 6)) / 128) | 0) +
+                            5 * (((r = 63 & o) / 16) | 0) +
+                            7 * (i = s)) &
+                        63;
                     let f = rayLookback[u];
 
                     f[0] = t;
                     f[1] = r;
                     f[2] = i;
-                }
-                else {
+                } else {
                     const c = 192 & n;
 
                     if (0 === c) {
@@ -231,8 +224,7 @@ export class Camera extends EventEmitter {
                         t = y[0];
                         r = y[1];
                         i = y[2];
-                    }
-                    else if (64 === c) {
+                    } else if (64 === c) {
                         const p = 63 & n;
                         const v = rayLookback[p];
                         const b = v[0];
@@ -242,8 +234,7 @@ export class Camera extends EventEmitter {
                         t = b + ((g >> 3) - 15);
                         r = w + ((7 & g) - 3);
                         i = h;
-                    }
-                    else if (128 === c) {
+                    } else if (128 === c) {
                         const R = 63 & n;
                         const C = rayLookback[R];
                         const I = C[0];
@@ -252,12 +243,14 @@ export class Camera extends EventEmitter {
                         t = I + (rayData[dataPointer++] - 127);
                         r = P;
                         i = k;
-                    }
-                    else {
+                    } else {
                         const A = rayData[dataPointer++];
                         const F = rayData[dataPointer++];
-                        const D = (3 * (((t = (A << 2) | (F >> 6)) / 128) | 0) + 5 *
-                            (((r = 63 & F) / 16) | 0) + 7 * (i = 63 & n)) & 63;
+                        const D =
+                            (3 * (((t = (A << 2) | (F >> 6)) / 128) | 0) +
+                                5 * (((r = 63 & F) / 16) | 0) +
+                                7 * (i = 63 & n)) &
+                            63;
                         let E = rayLookback[D];
                         E[0] = t;
                         E[1] = r;
@@ -266,14 +259,22 @@ export class Camera extends EventEmitter {
                 }
 
                 sampleOffset %= 2 * width * height;
-                const index = samplePositionBuffer[sampleOffset++] + samplePositionBuffer[sampleOffset++] * width;
+                const index =
+                    samplePositionBuffer[sampleOffset++] +
+                    samplePositionBuffer[sampleOffset++] * width;
                 output[index] = [t / 1023, r / 63, i];
             }
         }
 
         const colours = [
-            [0.5, 0.5, 0.5], [0.8, 0.7, 0.7], [0.3, 0.7, 1], [0.6, 0.6, 0.6],
-            [0.7, 0.7, 0.7], [0.8, 0.6, 0.4], [1, 0.4, 0.4], [1, 0.1, 0.1],
+            [0.5, 0.5, 0.5],
+            [0.8, 0.7, 0.7],
+            [0.3, 0.7, 1],
+            [0.6, 0.6, 0.6],
+            [0.7, 0.7, 0.7],
+            [0.8, 0.6, 0.4],
+            [1, 0.4, 0.4],
+            [1, 0.1, 0.1]
         ];
 
         const image = new jimp.Jimp({ width: width, height: height });
@@ -284,27 +285,35 @@ export class Camera extends EventEmitter {
                 continue;
             }
 
-            const distance = ray[0]
-            const alignment = ray[1]
-            const material = ray[2]
+            const distance = ray[0];
+            const alignment = ray[1];
+            const material = ray[2];
 
             let target_colour;
 
             if (distance === 1 && alignment === 0 && material === 0) {
                 target_colour = [208, 230, 252];
-            }
-            else {
+            } else {
                 const colour = colours[material];
                 target_colour = [
-                    (alignment * colour[0] * 255),
-                    (alignment * colour[1] * 255),
-                    (alignment * colour[2] * 255)
-                ]
+                    alignment * colour[0] * 255,
+                    alignment * colour[1] * 255,
+                    alignment * colour[2] * 255
+                ];
             }
 
             const x = i % width;
             const y = height - 1 - Math.floor(i / width);
-            image.setPixelColor(jimp.rgbaToInt(target_colour[0], target_colour[1], target_colour[2], 255), x, y);
+            image.setPixelColor(
+                jimp.rgbaToInt(
+                    target_colour[0],
+                    target_colour[1],
+                    target_colour[2],
+                    255
+                ),
+                x,
+                y
+            );
         }
 
         /* Return png buffer. */
@@ -318,27 +327,41 @@ export class Camera extends EventEmitter {
      * @param {string} identifier Camera identifier.
      * @returns {Promise<boolean>} Returns a promise that resolves true if successful, else false.
      */
-    async subscribe(playerId: string, playerToken: number, identifier: string): Promise<boolean> {
-        this.emit('subscribing');
+    async subscribe(
+        playerId: string,
+        playerToken: number,
+        identifier: string
+    ): Promise<boolean> {
+        this.emit("subscribing");
 
-        const response = await this.rustplus.cameraSubscribeAsync(playerId, playerToken, identifier);
-        if (validation.isValidAppResponse(response) &&
-            this.rustplus.getAppResponseError(response) === rp.AppResponseError.NoError) {
+        const response = await this.rustplus.cameraSubscribe(
+            playerId,
+            playerToken,
+            identifier
+        );
+
+        if (
+            isValidAppResponse(response) &&
+            this.rustplus.getAppResponseError(response) ===
+                AppResponseError.NoError
+        ) {
             this.identifier = identifier;
             this.playerId = playerId;
             this.playerToken = playerToken;
             this.isSubscribed = true;
             this.cameraRays = [];
-            this.cameraSubscribeInfo = response.cameraSubscribeInfo as rpi.AppCameraInfo;
-            this.cameraType = getCameraType(this.cameraSubscribeInfo.controlFlags);
+            this.cameraSubscribeInfo = response.cameraSubscribeInfo;
+            this.cameraType = getCameraType(
+                this.cameraSubscribeInfo.controlFlags
+            );
 
-            this.emit('subscribed');
+            this.emit("subscribed");
 
             return true;
         }
 
-        this.identifier = '';
-        this.playerId = '';
+        this.identifier = "";
+        this.playerId = "";
         this.playerToken = 0;
         this.isSubscribed = false;
         this.cameraRays = [];
@@ -353,21 +376,24 @@ export class Camera extends EventEmitter {
      * @returns {Promise<boolean>} Returns a promise that resolves true if successful, else false.
      */
     async unsubscribe(): Promise<boolean> {
-        this.emit('unsubscribing');
+        this.emit("unsubscribing");
 
         if (this.rustplus.isConnected()) {
-            await this.rustplus.cameraUnsubscribeAsync(this.playerId, this.playerToken);
+            await this.rustplus.cameraUnsubscribe(
+                this.playerId,
+                this.playerToken
+            );
         }
 
-        this.identifier = '';
-        this.playerId = '';
+        this.identifier = "";
+        this.playerId = "";
         this.playerToken = 0;
         this.isSubscribed = false;
         this.cameraRays = [];
         this.cameraSubscribeInfo = null;
         this.cameraType = CameraType.UNKNOWN;
 
-        this.emit('unsubscribed');
+        this.emit("unsubscribed");
 
         return true;
     }
@@ -377,15 +403,30 @@ export class Camera extends EventEmitter {
      * @returns {Promise<boolean>} Returns a promise that resolves true if successful, else false.
      */
     async zoom(): Promise<boolean> {
-        if (!this.isSubscribed || this.cameraType !== CameraType.PTZ_CCTV_CAMERA) {
+        if (
+            !this.isSubscribed ||
+            this.cameraType !== CameraType.PTZ_CCTV_CAMERA
+        ) {
             return false;
         }
 
         /* Press left mouse button to zoom in. */
-        await this.rustplus.cameraInputAsync(this.playerId, this.playerToken, Buttons.FIRE_PRIMARY, 0, 0);
+        await this.rustplus.cameraInput(
+            this.playerId,
+            this.playerToken,
+            Buttons.FIRE_PRIMARY,
+            0,
+            0
+        );
 
         /* Release all mouse buttons. */
-        await this.rustplus.cameraInputAsync(this.playerId, this.playerToken, Buttons.NONE, 0, 0);
+        await this.rustplus.cameraInput(
+            this.playerId,
+            this.playerToken,
+            Buttons.NONE,
+            0,
+            0
+        );
 
         return true;
     }
@@ -400,10 +441,22 @@ export class Camera extends EventEmitter {
         }
 
         /* Press left mouse button to shoot. */
-        await this.rustplus.cameraInputAsync(this.playerId, this.playerToken, Buttons.FIRE_PRIMARY, 0, 0);
+        await this.rustplus.cameraInput(
+            this.playerId,
+            this.playerToken,
+            Buttons.FIRE_PRIMARY,
+            0,
+            0
+        );
 
         /* Release all mouse buttons. */
-        await this.rustplus.cameraInputAsync(this.playerId, this.playerToken, Buttons.NONE, 0, 0);
+        await this.rustplus.cameraInput(
+            this.playerId,
+            this.playerToken,
+            Buttons.NONE,
+            0,
+            0
+        );
 
         return true;
     }
@@ -418,10 +471,22 @@ export class Camera extends EventEmitter {
         }
 
         /* Press left mouse button to shoot. */
-        await this.rustplus.cameraInputAsync(this.playerId, this.playerToken, Buttons.RELOAD, 0, 0);
+        await this.rustplus.cameraInput(
+            this.playerId,
+            this.playerToken,
+            Buttons.RELOAD,
+            0,
+            0
+        );
 
         /* Release all mouse buttons. */
-        await this.rustplus.cameraInputAsync(this.playerId, this.playerToken, Buttons.NONE, 0, 0);
+        await this.rustplus.cameraInput(
+            this.playerId,
+            this.playerToken,
+            Buttons.NONE,
+            0,
+            0
+        );
 
         return true;
     }
@@ -444,7 +509,10 @@ class IndexGenerator {
     private nextState(): number {
         let e = this.state;
         let t = e;
-        e = ((e = ((e = (e ^ ((e << 13) | 0)) | 0) ^ ((e >>> 17) | 0)) | 0) ^ ((e << 5) | 0)) | 0;
+        e =
+            ((e = ((e = (e ^ ((e << 13) | 0)) | 0) ^ ((e >>> 17) | 0)) | 0) ^
+                ((e << 5) | 0)) |
+            0;
         this.state = e;
         return t >= 0 ? t : 4294967295 + t - 1;
     }

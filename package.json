@@ -7,48 +7,36 @@
     "files": [
         "/dist"
     ],
-    "private": false,
     "scripts": {
-        "build": "tsc",
-        "start": "ts-node src/rustplus.ts",
-        "test": "ts-node src/test/test.ts",
+        "start": "yarn build && yarn start:prod",
+        "start:prod": "node ./dist/index.js",
+        "build": "swc src -d dist -D --delete-dir-on-start --strip-leading-paths",
+        "lint": "eslint \"src/**\" --fix",
+        "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
         "protogen": "protoc --ts_out src/interfaces --ts_opt long_type_string --proto_path src/protos src/protos/rustplus.proto"
     },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/alexemanuelol/rustplus-ts.git"
-    },
-    "author": "Alexander Emanuelsson",
-    "license": "SEE LICENSE IN LICENSE",
-    "bugs": {
-        "url": "https://github.com/alexemanuelol/rustplus-ts/issues"
-    },
-    "homepage": "https://github.com/alexemanuelol/rustplus-ts#readme",
-    "keywords": [
-        "rust",
-        "rust+",
-        "rustplus",
-        "rustplus-ts",
-        "rustplus-api",
-        "companion",
-        "api",
-        "websocket",
-        "smart switch",
-        "smart alarm",
-        "storage monitor",
-        "commands",
-        "team chat"
-    ],
     "dependencies": {
+        "@liamcottle/push-receiver": "^0.0.4",
         "@protobuf-ts/plugin": "^2.9.6",
-        "@types/ws": "^8.18.0",
+        "@swc/cli": "0.7.3",
+        "@swc/core": "1.11.21",
+        "@types/node": "^24.3.1",
         "jimp": "^1.6.0",
-        "ts-node": "^10.9.2",
+        "typed-emitter": "^2.1.0",
         "typescript": "^5.8.2",
         "winston": "^3.17.0",
         "ws": "^8.18.1"
     },
     "devDependencies": {
-        "dotenv": "^16.4.5"
-    }
+        "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
+        "@types/ws": "^8.18.1",
+        "@typescript-eslint/eslint-plugin": "^8.30.1",
+        "@typescript-eslint/parser": "^8.30.1",
+        "dotenv": "^16.4.5",
+        "eslint": "8.57.1",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-prettier": "^5.2.6",
+        "prettier": "^3.5.3"
+    },
+    "packageManager": "yarn@4.9.4"
 }
