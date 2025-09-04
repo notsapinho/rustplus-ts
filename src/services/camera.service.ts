@@ -19,7 +19,7 @@ export const CameraServiceCosts: Record<string, ServiceRequestCost> = {
 };
 
 export class CameraService extends BaseService {
-    public async cameraSubscribe(identifier: string) {
+    public async subscribe(identifier: string) {
         const result = await this.client.consumeTokens(
             CameraServiceCosts.cameraSubscribe
         );
@@ -37,10 +37,11 @@ export class CameraService extends BaseService {
         return appResponse;
     }
 
-    public async cameraUnsubscribe() {
+    public async unsubscribe() {
         const result = await this.client.consumeTokens(
             CameraServiceCosts.cameraUnsubscribe
         );
+
         if (result !== ConsumeTokensError.NoError) return result;
 
         const appResponse = await this.client.sendRequestAsync(
@@ -53,7 +54,7 @@ export class CameraService extends BaseService {
         return appResponse;
     }
 
-    public async cameraInput(buttons: number, x: number, y: number) {
+    public async input(buttons: number, x: number, y: number) {
         const result = await this.client.consumeTokens(
             CameraServiceCosts.cameraInput
         );

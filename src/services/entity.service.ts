@@ -21,7 +21,7 @@ export const EntityServiceCosts = {
 };
 
 export class EntityService extends BaseService {
-    public async getEntityInfo(entityId: number) {
+    public async getInfo(entityId: number) {
         const result = await this.client.consumeTokens(
             EntityServiceCosts.getEntityInfo
         );
@@ -38,7 +38,7 @@ export class EntityService extends BaseService {
         return appResponse;
     }
 
-    public async setEntityValue(entityId: number, value: boolean) {
+    public async setValue(entityId: number, value: boolean) {
         const result = await this.client.consumeTokens(
             EntityServiceCosts.setEntityValue
         );

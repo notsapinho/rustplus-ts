@@ -7,17 +7,14 @@ import WebSocket from "ws";
 
 import { AppResponseError } from "@/errors/app-response.error";
 import { ConsumeTokensError } from "@/errors/consume-tokens.error";
+import { CameraService } from "@/services/camera.service";
+import { EntityService } from "@/services/entity.service";
+import { ServerService } from "@/services/server.service";
 import { AppMessage, AppRequest } from "../interfaces/rustplus";
 
 export enum EmitErrorType {
     WebSocket = 0,
     Callback = 1
-}
-
-export interface RustPlusRequestTokens {
-    connection: number;
-    player: number;
-    serverPairing: number;
 }
 
 type CallbackFunction = (appMessage: AppMessage) => void;
@@ -44,8 +41,18 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<RustPlu
 
     private ws: WebSocket | null;
 
-    private tokens: RustPlusRequestTokens;
+    private tokens: {
+        connection: number;
+        player: number;
+        serverPairing: number;
+    };
+
     private replenishInterval: NodeJS.Timeout | null;
+
+    public camera = new CameraService(this);
+    public entity = new EntityService(this);
+    public server = new ServerService(this);
+    public team = new EntityService(this);
 
     constructor(
         public ip: string,

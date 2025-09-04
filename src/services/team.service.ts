@@ -21,7 +21,7 @@ export const TeamServiceCosts = {
 };
 
 export class TeamService extends BaseService {
-    public async getTeamInfo() {
+    public async getInfo() {
         const result = await this.client.consumeTokens(
             TeamServiceCosts.getTeamInfo
         );
@@ -37,7 +37,7 @@ export class TeamService extends BaseService {
         return appResponse;
     }
 
-    public async getTeamChat() {
+    public async getChat() {
         const result = await this.client.consumeTokens(
             TeamServiceCosts.getTeamChat
         );
@@ -53,7 +53,7 @@ export class TeamService extends BaseService {
         return appResponse;
     }
 
-    public async sendTeamMessage(message: string) {
+    public async sendMessage(message: string) {
         const result = await this.client.consumeTokens(
             TeamServiceCosts.sendTeamMessage
         );
