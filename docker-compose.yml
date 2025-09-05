@@ -1,0 +1,9 @@
+services:
+    rustplus:
+        container_name: rustplus
+        restart: unless-stopped
+        env_file:
+            - .env
+        build:
+            context: .
+            dockerfile: ./Dockerfile
