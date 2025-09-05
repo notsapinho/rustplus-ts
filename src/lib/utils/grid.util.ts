@@ -1,14 +1,12 @@
 const GRID_DIAMETER = 146.25;
 
 export function getGridLabelByXY(x: number, y: number, mapSize: number) {
-    const correctedMapSize = getCorrectedMapSize(mapSize);
-
-    if (isOutsideGridSystem(x, y, correctedMapSize)) {
+    if (isOutsideGridSystem(x, y, mapSize)) {
         return null;
     }
 
-    const gridPosLetters = getGridLettersByX(x, correctedMapSize);
-    const gridPosNumber = getGridNumberByY(y, correctedMapSize);
+    const gridPosLetters = getGridLettersByX(x, mapSize);
+    const gridPosNumber = getGridNumberByY(y, mapSize);
 
     return gridPosLetters + gridPosNumber;
 }
