@@ -1,5 +1,4 @@
 export const Constants = {
-    CARGO_SHIP_EGRESS_TIME: 50 * 60 * 1000 /* 50 min */,
     OIL_RIG_LOCKED_CRATE_UNLOCK_TIME: 15 * 60 * 1000 /* 15 min */,
 
     PATROL_HELI_DOWNED_RADIUS: 400,

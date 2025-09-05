@@ -69,8 +69,17 @@ export class MapMarkerListener extends Listener<
                     : "Oil Rig Grande";
 
             await this.container.client.services.team.sendMessage(
-                `A caixa da "${rigName}" acabou de ser aberta!`
+                `A caixa da "${rigName}" acabou de ser acionada!`
             );
+
+            //TODO: Use scheduled tasks or similar
+            setTimeout(async () => {
+                await this.container.client.services.team.sendMessage(
+                    `A caixa da "${rigName}" destrancou!`
+                );
+
+                Logger.info(`Crate unlocked at ${rigName}`);
+            }, Constants.OIL_RIG_LOCKED_CRATE_UNLOCK_TIME);
 
             Logger.info(`CH47 spawned at ${rigName}`);
 
