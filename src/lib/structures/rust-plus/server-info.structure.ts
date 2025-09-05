@@ -1,6 +1,5 @@
-import type { AppInfo } from "@/interfaces/rustplus";
+import type { AppInfo } from "@/lib/interfaces/rustplus";
 
-//TODO: Add more server info
 export class ServerInfo {
     public mapSize: number;
 

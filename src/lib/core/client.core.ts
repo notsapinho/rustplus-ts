@@ -1,40 +1,25 @@
-import { EventEmitter } from "events";
-import type { ServiceRequestCost } from "@/types/cost.type";
-import type TypedEventEmitter from "typed-emitter";
+import { EventEmitter } from "node:events";
+import { resolve } from "node:path";
+import type { ServiceRequestCost } from "@/lib/types/cost.type";
+import type { ClientEvents } from "@/lib/types/events.type";
+import type { StoreRegistry } from "@sapphire/pieces";
 import type { AppResponse } from "../interfaces/rustplus";
 
+import { container } from "@sapphire/pieces";
 import WebSocket from "ws";
 
-import { ConsumeTokensError } from "@/errors/consume-tokens.error";
-import { CameraService } from "@/services/camera.service";
-import { EntityService } from "@/services/entity.service";
-import { ServerService } from "@/services/server.service";
-import { TeamService } from "@/services/team.service";
-import { isValidAppResponse } from "@/utils/is-app-response.util";
-import { sleep } from "@/utils/sleep.util";
+import { ConsumeTokensError } from "@/lib/errors/consume-tokens.error";
+import { Camera, ServerInfo, Team, Time } from "@/lib/structures/rust-plus";
+import { isValidAppResponse } from "@/lib/utils/is-app-response.util";
+import { sleep } from "@/lib/utils/sleep.util";
 import { AppMessage, AppRequest } from "../interfaces/rustplus";
-import { Camera } from "./structures/camera.structure";
-import { ServerInfo } from "./structures/server-info.structure";
-import { Team } from "./structures/team.structure";
-import { Time } from "./structures/time.structure";
+import { ListenerStore, Services, ServiceStore } from "../structures";
 
-export enum EmitErrorType {
-    WebSocket = 0,
-    Callback = 1
-}
+import "../services/_load";
 
 type CallbackFunction = (appMessage: AppMessage) => void;
 
-type ClientEvents = {
-    connecting: () => void;
-    connected: () => void;
-    message: (appMessage: AppMessage, handled: boolean) => void;
-    request: (appRequest: AppRequest) => void;
-    disconnected: () => void;
-    error: (type: EmitErrorType, error: Error) => void;
-};
-
-export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientEvents>) {
+export class Client extends EventEmitter<ClientEvents> {
     private static readonly MAX_REQUESTS_PER_IP_ADDRESS = 50;
     private static readonly REQUESTS_PER_IP_REPLENISH_RATE = 15;
     private static readonly MAX_REQUESTS_PER_PLAYER_ID = 25;
@@ -55,15 +40,11 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
         player: Client.MAX_REQUESTS_PER_PLAYER_ID,
         serverPairing: Client.MAX_REQUESTS_FOR_SERVER_PAIRING
     };
+    public readonly services = new Services();
 
     private poolInterval: NodeJS.Timeout | null = null;
-
-    public cameraService = new CameraService(this);
-    public entityService = new EntityService(this);
-    public serverService = new ServerService(this);
-    public teamService = new TeamService(this);
-
     public connectedCamera: Camera | null = null;
+
     public team: Team | null = null;
     public serverInfo: ServerInfo | null = null;
     public time: Time | null = null;
@@ -76,6 +57,16 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
         public useFacepunchProxy = false
     ) {
         super();
+
+        container.client = this;
+
+        container.stores //
+            .register(
+                new ListenerStore().registerPath(
+                    resolve(__dirname, "..", "..", "listeners")
+                )
+            )
+            .register(new ServiceStore());
     }
 
     private replenishTask() {
@@ -159,6 +150,16 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
     }
 
     public async connect() {
+        await Promise.all(
+            [...container.stores.values()].map((store) => store.loadAll())
+        );
+
+        for (const [name, service] of container.stores
+            .get("services")
+            .entries()) {
+            this.services.exposePiece(name, service);
+        }
+
         if (this.ws !== null) {
             await this.disconnect();
         }
@@ -178,7 +179,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
             this.emit("disconnected");
         });
         this.ws.on("error", (e) => {
-            this.emit("error", EmitErrorType.WebSocket, e);
+            this.emit("error", e);
         });
         this.ws.on("message", (data: WebSocket.Data) => {
             try {
@@ -206,7 +207,6 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
                                 : "Unknown error";
                         this.emit(
                             "error",
-                            EmitErrorType.Callback,
                             new Error(`ERROR on.message: ${errorMessage}`)
                         );
                     } finally {
@@ -220,7 +220,6 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
                     error instanceof Error ? error.message : "Unknown error";
                 this.emit(
                     "error",
-                    EmitErrorType.Callback,
                     new Error(`ERROR on.message: ${errorMessage}`)
                 );
             }
@@ -388,7 +387,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
 
         this.poolInterval = setInterval(() => {
             void this.pool();
-        }, 10000);
+        }, 5000);
     }
 
     private async pool() {
@@ -396,7 +395,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
             throw new Error("Client is not connected.");
         }
 
-        const time = await this.serverService.getTime();
+        const time = await this.services.server.getTime();
 
         if (!isValidAppResponse(time))
             throw new Error(`Failed to get time: ${time}`);
@@ -404,7 +403,7 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
         if (this.time) this.time.update(time.time);
         else this.time = new Time(time.time);
 
-        const serverInfo = await this.serverService.getInfo();
+        const serverInfo = await this.services.server.getInfo();
 
         if (!isValidAppResponse(serverInfo))
             throw new Error(`Failed to get server info: ${serverInfo}`);
@@ -412,12 +411,24 @@ export class Client extends (EventEmitter as new () => TypedEventEmitter<ClientE
         if (this.serverInfo) this.serverInfo.update(serverInfo.info);
         else this.serverInfo = new ServerInfo(serverInfo.info);
 
-        const team = await this.teamService.getInfo();
+        const team = await this.services.team.getInfo();
 
         if (!isValidAppResponse(team))
             throw new Error(`Failed to get team info: ${team}`);
 
         if (this.team) this.team.update(team.teamInfo);
         else this.team = new Team(team.teamInfo);
+    }
+}
+
+declare module "@sapphire/pieces" {
+    interface Container {
+        client: Client;
+        stores: StoreRegistry;
+    }
+
+    interface StoreRegistryEntries {
+        listeners: ListenerStore;
+        services: ServiceStore;
     }
 }

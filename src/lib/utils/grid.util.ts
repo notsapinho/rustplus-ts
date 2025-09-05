@@ -1,8 +1,6 @@
 const GRID_DIAMETER = 146.25;
 
 export function getGridByXY(x: number, y: number, mapSize: number) {
-    const correctedMapSize = getCorrectedMapSize(mapSize);
-
     const pos = {
         location: null,
         monument: null,
@@ -11,32 +9,7 @@ export function getGridByXY(x: number, y: number, mapSize: number) {
         y
     };
 
-    if (isOutsideGridSystem(x, y, correctedMapSize)) {
-        if (isOutsideRowOrColumn(x, y, correctedMapSize)) {
-            if (x < 0 && y > correctedMapSize) {
-                pos.location = "NW";
-            } else if (x < 0 && y < 0) {
-                pos.location = "SW";
-            } else if (x > correctedMapSize && y > correctedMapSize) {
-                pos.location = "NE";
-            } else {
-                pos.location = "SE";
-            }
-        } else {
-            let str = "";
-            if (x < 0 || x > correctedMapSize) {
-                str +=
-                    x < 0 ? "Ao oeste do quadrante" : "Ao leste do quadrante";
-                str += ` ${getGridNumberByY(y, correctedMapSize)}`;
-            } else {
-                str += y < 0 ? "Ao sul do quadrante" : "Ao norte do quadrante";
-                str += ` ${getGridLettersByX(x, correctedMapSize)}`;
-            }
-            pos.location = str;
-        }
-    } else {
-        pos.location = getGridLabelByXY(x, y, mapSize);
-    }
+    pos.location = getGridLabelByXY(x, y, mapSize);
 
     pos.string = `${pos.location}${pos.monument !== null ? ` (${pos.monument})` : ""}`;
 
@@ -105,17 +78,5 @@ export function isOutsideGridSystem(
         return true;
     }
 
-    return false;
-}
-
-export function isOutsideRowOrColumn(x: number, y: number, mapSize: number) {
-    if (
-        (x < 0 && y > mapSize) ||
-        (x < 0 && y < 0) ||
-        (x > mapSize && y > mapSize) ||
-        (x > mapSize && y < 0)
-    ) {
-        return true;
-    }
     return false;
 }

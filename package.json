@@ -13,16 +13,17 @@
         "build": "swc src -d dist -D --delete-dir-on-start --strip-leading-paths",
         "lint": "eslint \"src/**\" --fix",
         "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
-        "protogen": "protoc --ts_out src/interfaces --ts_opt long_type_string --proto_path src/protos src/protos/rustplus.proto"
+        "protogen": "protoc --ts_out src/lib/interfaces --ts_opt long_type_string --proto_path src/protos src/protos/rustplus.proto"
     },
     "dependencies": {
         "@liamcottle/push-receiver": "^0.0.4",
         "@protobuf-ts/plugin": "^2.9.6",
+        "@sapphire/pieces": "^4.4.1",
+        "@sapphire/result": "^2.7.2",
         "@swc/cli": "0.7.3",
         "@swc/core": "1.11.21",
         "@types/node": "^24.3.1",
         "jimp": "^1.6.0",
-        "typed-emitter": "^2.1.0",
         "typescript": "^5.8.2",
         "winston": "^3.17.0",
         "ws": "^8.18.1"

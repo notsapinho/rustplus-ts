@@ -1,5 +1,7 @@
-import { ConsumeTokensError } from "@/errors/consume-tokens.error";
-import { BaseService } from "./base.service";
+import { container } from "@sapphire/pieces";
+
+import { ConsumeTokensError } from "@/lib/errors/consume-tokens.error";
+import { Service } from "../structures/client/service";
 
 export const TeamServiceCosts = {
     getTeamInfo: {
@@ -20,14 +22,14 @@ export const TeamServiceCosts = {
     }
 };
 
-export class TeamService extends BaseService {
+export class TeamService extends Service {
     public async getInfo() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             TeamServiceCosts.getTeamInfo
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 getTeamInfo: {}
             },
@@ -38,12 +40,12 @@ export class TeamService extends BaseService {
     }
 
     public async getChat() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             TeamServiceCosts.getTeamChat
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 getTeamChat: {}
             },
@@ -54,12 +56,12 @@ export class TeamService extends BaseService {
     }
 
     public async sendMessage(message: string) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             TeamServiceCosts.sendTeamMessage
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 sendTeamMessage: {
                     message: message
@@ -72,12 +74,12 @@ export class TeamService extends BaseService {
     }
 
     public async promoteToLeader(steamId: string) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             TeamServiceCosts.promoteToLeader
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 promoteToLeader: {
                     steamId: steamId
@@ -89,3 +91,14 @@ export class TeamService extends BaseService {
         return appResponse;
     }
 }
+declare module "@/lib/structures/client/service" {
+    interface Services {
+        team: TeamService;
+    }
+}
+
+void container.stores.loadPiece({
+    name: "team",
+    piece: TeamService,
+    store: "services"
+});

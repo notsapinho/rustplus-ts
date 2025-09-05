@@ -3,7 +3,7 @@ import type {
     AppTeamInfo,
     AppTeamInfo_Member,
     AppTeamInfo_Note
-} from "@/interfaces/rustplus";
+} from "@/lib/interfaces/rustplus";
 import type TypedEventEmitter from "typed-emitter";
 
 type TeamEvents = {
@@ -59,6 +59,7 @@ export class Team extends (EventEmitter as new () => TypedEventEmitter<TeamEvent
 
             if (!oldMember) {
                 this.members.push(newMember);
+
                 this.emit("memberAdded", newMember);
             }
 
@@ -83,5 +84,7 @@ export class Team extends (EventEmitter as new () => TypedEventEmitter<TeamEvent
                 this.emit("memberDied", member);
             }
         }
+
+        this.members = newInfo.members;
     }
 }

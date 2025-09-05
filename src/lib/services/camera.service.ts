@@ -1,7 +1,9 @@
-import type { ServiceRequestCost } from "@/types/cost.type";
+import type { ServiceRequestCost } from "@/lib/types/cost.type";
 
-import { ConsumeTokensError } from "@/errors/consume-tokens.error";
-import { BaseService } from "./base.service";
+import { container } from "@sapphire/pieces";
+
+import { ConsumeTokensError } from "@/lib/errors/consume-tokens.error";
+import { Service } from "../structures/client/service";
 
 export const CameraServiceCosts: Record<string, ServiceRequestCost> = {
     cameraSubscribe: {
@@ -18,14 +20,14 @@ export const CameraServiceCosts: Record<string, ServiceRequestCost> = {
     }
 };
 
-export class CameraService extends BaseService {
+export class CameraService extends Service {
     public async subscribe(identifier: string) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             CameraServiceCosts.cameraSubscribe
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 cameraSubscribe: {
                     cameraId: identifier
@@ -38,13 +40,13 @@ export class CameraService extends BaseService {
     }
 
     public async unsubscribe() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             CameraServiceCosts.cameraUnsubscribe
         );
 
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 cameraUnsubscribe: {}
             },
@@ -55,12 +57,12 @@ export class CameraService extends BaseService {
     }
 
     public async input(buttons: number, x: number, y: number) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             CameraServiceCosts.cameraInput
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 cameraInput: {
                     buttons,
@@ -76,3 +78,15 @@ export class CameraService extends BaseService {
         return appResponse;
     }
 }
+
+declare module "@/lib/structures/client/service" {
+    interface Services {
+        camera: CameraService;
+    }
+}
+
+void container.stores.loadPiece({
+    name: "camera",
+    piece: CameraService,
+    store: "services"
+});

@@ -1,5 +1,7 @@
-import { ConsumeTokensError } from "@/errors/consume-tokens.error";
-import { BaseService } from "./base.service";
+import { container } from "@sapphire/pieces";
+
+import { ConsumeTokensError } from "@/lib/errors/consume-tokens.error";
+import { Service } from "../structures/client/service/service.structure";
 
 export const EntityServiceCosts = {
     getEntityInfo: {
@@ -20,14 +22,14 @@ export const EntityServiceCosts = {
     }
 };
 
-export class EntityService extends BaseService {
+export class EntityService extends Service {
     public async getInfo(entityId: number) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             EntityServiceCosts.getEntityInfo
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 entityId: entityId,
                 getEntityInfo: {}
@@ -39,12 +41,12 @@ export class EntityService extends BaseService {
     }
 
     public async setValue(entityId: number, value: boolean) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             EntityServiceCosts.setEntityValue
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 entityId: entityId,
                 setEntityValue: {
@@ -58,12 +60,12 @@ export class EntityService extends BaseService {
     }
 
     public async checkSubscription(entityId: number) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             EntityServiceCosts.checkSubscription
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 entityId: entityId,
                 checkSubscription: {}
@@ -75,12 +77,12 @@ export class EntityService extends BaseService {
     }
 
     public async setSubscription(entityId: number, value: boolean) {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             EntityServiceCosts.setSubscription
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 entityId: entityId,
                 setSubscription: {
@@ -93,3 +95,15 @@ export class EntityService extends BaseService {
         return appResponse;
     }
 }
+
+declare module "@/lib/structures/client/service" {
+    interface Services {
+        entity: EntityService;
+    }
+}
+
+void container.stores.loadPiece({
+    name: "entity",
+    piece: EntityService,
+    store: "services"
+});

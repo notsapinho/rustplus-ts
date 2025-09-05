@@ -4,12 +4,12 @@ import type {
     AppCameraRays,
     AppMessage,
     AppResponse
-} from "@/interfaces/rustplus";
+} from "@/lib/interfaces/rustplus";
 import type { Client } from "../client.core";
 
 import * as jimp from "jimp";
 
-import { IndexGenerator } from "@/utils/index-generator.util";
+import { IndexGenerator } from "@/lib/utils/index-generator.util";
 
 export enum Buttons {
     NONE = 0,

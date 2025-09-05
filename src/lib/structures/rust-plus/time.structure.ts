@@ -1,6 +1,5 @@
-import type { AppTime } from "@/interfaces/rustplus";
+import type { AppTime } from "@/lib/interfaces/rustplus";
 
-//TODO: Add more server info
 export class Time {
     public startTime: AppTime;
 
@@ -28,7 +27,9 @@ export class Time {
     public get timeUntilDaytime() {
         if (this.isDaytime) return 0;
 
-        return this.time.sunrise - this.time.time;
+        return this.time.time > this.time.sunrise
+            ? 24 - this.time.time + this.time.sunrise
+            : this.time.sunrise - this.time.time;
     }
 
     public update(time: AppTime) {

@@ -1,5 +1,7 @@
-import { ConsumeTokensError } from "@/errors/consume-tokens.error";
-import { BaseService } from "./base.service";
+import { container } from "@sapphire/pieces";
+
+import { ConsumeTokensError } from "@/lib/errors/consume-tokens.error";
+import { Service } from "../structures/client/service/service.structure";
 
 export const ServerServiceCosts = {
     getInfo: {
@@ -20,14 +22,14 @@ export const ServerServiceCosts = {
     }
 };
 
-export class ServerService extends BaseService {
+export class ServerService extends Service {
     public async getInfo() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             ServerServiceCosts.getInfo
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 getInfo: {}
             },
@@ -38,13 +40,13 @@ export class ServerService extends BaseService {
     }
 
     public async getTime() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             ServerServiceCosts.getTime
         );
 
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 getTime: {}
             },
@@ -55,13 +57,13 @@ export class ServerService extends BaseService {
     }
 
     public async getMap() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             ServerServiceCosts.getMap
         );
 
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 getMap: {}
             },
@@ -72,12 +74,12 @@ export class ServerService extends BaseService {
     }
 
     public async getMapMarkers() {
-        const result = await this.client.consumeTokens(
+        const result = await this.container.client.consumeTokens(
             ServerServiceCosts.getMapMarkers
         );
         if (result !== ConsumeTokensError.NoError) return result;
 
-        const appResponse = await this.client.sendRequestAsync(
+        const appResponse = await this.container.client.sendRequestAsync(
             {
                 getMapMarkers: {}
             },
@@ -87,3 +89,15 @@ export class ServerService extends BaseService {
         return appResponse;
     }
 }
+
+declare module "@/lib/structures/client/service" {
+    interface Services {
+        server: ServerService;
+    }
+}
+
+void container.stores.loadPiece({
+    name: "server",
+    piece: ServerService,
+    store: "services"
+});
