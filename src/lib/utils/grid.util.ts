@@ -1,21 +1,5 @@
 const GRID_DIAMETER = 146.25;
 
-export function getGridByXY(x: number, y: number, mapSize: number) {
-    const pos = {
-        location: null,
-        monument: null,
-        string: null,
-        x,
-        y
-    };
-
-    pos.location = getGridLabelByXY(x, y, mapSize);
-
-    pos.string = `${pos.location}${pos.monument !== null ? ` (${pos.monument})` : ""}`;
-
-    return pos;
-}
-
 export function getGridLabelByXY(x: number, y: number, mapSize: number) {
     const correctedMapSize = getCorrectedMapSize(mapSize);
 
@@ -29,7 +13,7 @@ export function getGridLabelByXY(x: number, y: number, mapSize: number) {
     return gridPosLetters + gridPosNumber;
 }
 
-export function getGridLettersByX(x: number, mapSize: number) {
+export function getGridLettersByX(x: number, mapSize: number): string {
     let counter = 1;
     for (let startGrid = 0; startGrid < mapSize; startGrid += GRID_DIAMETER) {
         if (x >= startGrid && x <= startGrid + GRID_DIAMETER) {
@@ -39,7 +23,7 @@ export function getGridLettersByX(x: number, mapSize: number) {
     }
 }
 
-export function getGridNumberByY(y: number, mapSize: number) {
+export function getGridNumberByY(y: number, mapSize: number): number {
     let counter = 1;
     const numberOfGrids = Math.floor(mapSize / GRID_DIAMETER);
     for (let startGrid = 0; startGrid < mapSize; startGrid += GRID_DIAMETER) {
@@ -50,7 +34,7 @@ export function getGridNumberByY(y: number, mapSize: number) {
     }
 }
 
-export function numberToLetters(num: number) {
+export function numberToLetters(num: number): string {
     const mod = num % 26;
     let pow = (num / 26) | 0;
     const out = mod ? String.fromCharCode(64 + mod) : (pow--, "Z");
@@ -79,4 +63,16 @@ export function isOutsideGridSystem(
     }
 
     return false;
+}
+
+export function getDistanceBetween(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number
+) {
+    const a = x1 - x2;
+    const b = y1 - y2;
+
+    return Math.sqrt(a ** 2 + b ** 2);
 }

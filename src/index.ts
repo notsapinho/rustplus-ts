@@ -1,17 +1,18 @@
 import "dotenv/config";
 
-import { Client } from "@/lib/core";
+import { BotClient } from "./structures/";
 
 const bootstrap = async () => {
-    const serverIp = "131.196.198.41";
-    const serverPort = "28082";
-
-    const client = new Client(
-        serverIp,
-        serverPort,
-        process.env.PLAYER_ID,
-        parseInt(process.env.PLAYER_TOKEN, 10)
-    );
+    const client = new BotClient({
+        server: {
+            ip: "131.196.198.41",
+            port: "28082"
+        },
+        credentials: {
+            playerId: process.env.PLAYER_ID,
+            playerToken: parseInt(process.env.PLAYER_TOKEN, 10)
+        }
+    });
 
     await client.connect();
 };

@@ -1,7 +1,8 @@
-import type { ListenerContext } from "@/lib/structures/client/listener/listener.structure";
+import type { ListenerContext } from "@/lib/structures/listener";
 
-import { Listener } from "@/lib/structures/client/listener/listener.structure";
+import { Listener } from "@/lib/structures/listener";
 import { Events } from "@/lib/types/events.type";
+import { Logger } from "@/utils";
 
 export class ClientListener extends Listener<typeof Events.Connected> {
     public constructor(context: ListenerContext) {
@@ -9,7 +10,7 @@ export class ClientListener extends Listener<typeof Events.Connected> {
     }
 
     public async run() {
-        console.log("Connected to server");
+        Logger.info("Connected to the server");
 
         await this.container.client.startPoolInterval();
     }

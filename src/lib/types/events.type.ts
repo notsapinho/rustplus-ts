@@ -1,5 +1,5 @@
 import type { AppMessage, AppRequest } from "@/lib/interfaces/rustplus";
-import type { Listener } from "@/lib/structures/client/listener/listener.structure";
+import type { Listener } from "../structures";
 
 export const Events = {
     Connecting: "connecting",

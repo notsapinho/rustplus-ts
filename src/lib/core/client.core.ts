@@ -9,16 +9,33 @@ import { container } from "@sapphire/pieces";
 import WebSocket from "ws";
 
 import { ConsumeTokensError } from "@/lib/errors/consume-tokens.error";
-import { Camera, ServerInfo, Team, Time } from "@/lib/structures/rust-plus";
-import { isValidAppResponse } from "@/lib/utils/is-app-response.util";
-import { sleep } from "@/lib/utils/sleep.util";
+import { sleep } from "@/lib/utils";
 import { AppMessage, AppRequest } from "../interfaces/rustplus";
-import { ListenerStore, Services, ServiceStore } from "../structures";
 
-import "../services/_load";
+import "./services/_load";
+import "./listeners/_load";
+
+import type { Plugin } from "../structures/plugins";
+
+import { CommandStore } from "../structures/command/stores";
+import { ListenerStore } from "../structures/listener";
+import { PluginHook, PluginManager } from "../structures/plugins";
+import { Services, ServiceStore } from "../structures/service";
 
 type CallbackFunction = (appMessage: AppMessage) => void;
 
+export interface ClientOptions {
+    server: {
+        ip: string;
+        port: string;
+    };
+    credentials: {
+        playerId: string;
+        playerToken: number;
+    };
+    prefix?: string;
+    useFacepunchProxy?: boolean;
+}
 export class Client extends EventEmitter<ClientEvents> {
     private static readonly MAX_REQUESTS_PER_IP_ADDRESS = 50;
     private static readonly REQUESTS_PER_IP_REPLENISH_RATE = 15;
@@ -26,6 +43,7 @@ export class Client extends EventEmitter<ClientEvents> {
     private static readonly REQUESTS_PER_PLAYER_ID_REPLENISH_RATE = 3;
     private static readonly MAX_REQUESTS_FOR_SERVER_PAIRING = 5;
     private static readonly REQUESTS_FOR_SERVER_PAIRING_REPLENISH_RATE = 0.1;
+    public static plugins = new PluginManager();
 
     private seq = 0;
     private seqCallbacks: CallbackFunction[] = [];
@@ -41,32 +59,40 @@ export class Client extends EventEmitter<ClientEvents> {
         serverPairing: Client.MAX_REQUESTS_FOR_SERVER_PAIRING
     };
     public readonly services = new Services();
+    public readonly stores = container.stores;
 
-    private poolInterval: NodeJS.Timeout | null = null;
-    public connectedCamera: Camera | null = null;
-
-    public team: Team | null = null;
-    public serverInfo: ServerInfo | null = null;
-    public time: Time | null = null;
-
-    constructor(
-        public ip: string,
-        public port: string,
-        public playerId: string,
-        public playerToken: number,
-        public useFacepunchProxy = false
-    ) {
+    constructor(public options: ClientOptions) {
         super();
+
+        this.options.prefix ??= "!";
+        this.options.useFacepunchProxy ??= false;
 
         container.client = this;
 
-        container.stores //
+        for (const plugin of Client.plugins.values(
+            PluginHook.PreInitialization
+        )) {
+            plugin.hook.call(this);
+        }
+
+        this.stores //
+            .register(new ServiceStore())
             .register(
                 new ListenerStore().registerPath(
                     resolve(__dirname, "..", "..", "listeners")
                 )
             )
-            .register(new ServiceStore());
+            .register(
+                new CommandStore().registerPath(
+                    resolve(__dirname, "..", "..", "commands")
+                )
+            );
+
+        for (const plugin of Client.plugins.values(
+            PluginHook.PostInitialization
+        )) {
+            plugin.hook.call(this);
+        }
     }
 
     private replenishTask() {
@@ -150,6 +176,14 @@ export class Client extends EventEmitter<ClientEvents> {
     }
 
     public async connect() {
+        for (const plugin of Client.plugins.values(PluginHook.PreLogin)) {
+            await plugin.hook.call(this);
+        }
+
+        if (this.ws !== null) {
+            await this.disconnect();
+        }
+
         await Promise.all(
             [...container.stores.values()].map((store) => store.loadAll())
         );
@@ -160,19 +194,19 @@ export class Client extends EventEmitter<ClientEvents> {
             this.services.exposePiece(name, service);
         }
 
-        if (this.ws !== null) {
-            await this.disconnect();
-        }
-
         this.emit("connecting");
 
         this.ws = new WebSocket(
-            this.useFacepunchProxy
-                ? `wss://companion-rust.facepunch.com/game/${this.ip}/${this.port}`
-                : `ws://${this.ip}:${this.port}`
+            this.options.useFacepunchProxy
+                ? `wss://companion-rust.facepunch.com/game/${this.options.server.ip}/${this.options.server.port}`
+                : `ws://${this.options.server.ip}:${this.options.server.port}`
         );
 
-        this.ws.on("open", () => {
+        this.ws.on("open", async () => {
+            for (const plugin of Client.plugins.values(PluginHook.PostLogin)) {
+                await plugin.hook.call(this);
+            }
+
             this.emit("connected");
         });
         this.ws.on("close", () => {
@@ -235,10 +269,6 @@ export class Client extends EventEmitter<ClientEvents> {
             clearInterval(this.replenishInterval);
         }
 
-        if (this.poolInterval) {
-            clearInterval(this.poolInterval);
-        }
-
         if (this.ws !== null) {
             this.ws.removeAllListeners();
             this.ws.on("error", () => {
@@ -281,8 +311,8 @@ export class Client extends EventEmitter<ClientEvents> {
         try {
             appRequestData = {
                 seq,
-                playerId: this.playerId,
-                playerToken: this.playerToken,
+                playerId: this.options.credentials.playerId,
+                playerToken: this.options.credentials.playerToken,
                 ...data
             };
         } catch (error) {
@@ -362,62 +392,9 @@ export class Client extends EventEmitter<ClientEvents> {
         });
     }
 
-    public async connectToCamera(identifier: string) {
-        const camera = new Camera(this, identifier);
-
-        const subscribed = await camera.subscribe();
-
-        if (!subscribed) return null;
-
-        if (this.connectedCamera)
-            // TODO: Create and use a specific error for this
-            throw new Error(
-                "A camera is already connected. Please disconnect it before connecting to another camera."
-            );
-
-        this.connectedCamera = camera;
-
-        return camera;
-    }
-
-    public async startPoolInterval() {
-        if (this.poolInterval) return;
-
-        await this.pool();
-
-        this.poolInterval = setInterval(() => {
-            void this.pool();
-        }, 5000);
-    }
-
-    private async pool() {
-        if (!this.isConnected) {
-            throw new Error("Client is not connected.");
-        }
-
-        const time = await this.services.server.getTime();
-
-        if (!isValidAppResponse(time))
-            throw new Error(`Failed to get time: ${time}`);
-
-        if (this.time) this.time.update(time.time);
-        else this.time = new Time(time.time);
-
-        const serverInfo = await this.services.server.getInfo();
-
-        if (!isValidAppResponse(serverInfo))
-            throw new Error(`Failed to get server info: ${serverInfo}`);
-
-        if (this.serverInfo) this.serverInfo.update(serverInfo.info);
-        else this.serverInfo = new ServerInfo(serverInfo.info);
-
-        const team = await this.services.team.getInfo();
-
-        if (!isValidAppResponse(team))
-            throw new Error(`Failed to get team info: ${team}`);
-
-        if (this.team) this.team.update(team.teamInfo);
-        else this.team = new Team(team.teamInfo);
+    public static use(plugin: typeof Plugin) {
+        this.plugins.use(plugin);
+        return this;
     }
 }
 
@@ -430,5 +407,6 @@ declare module "@sapphire/pieces" {
     interface StoreRegistryEntries {
         listeners: ListenerStore;
         services: ServiceStore;
+        commands: CommandStore;
     }
 }
