@@ -1,18 +1,26 @@
 # ----- BASE ------
-FROM node:lts AS stage-base
+FROM node:22-alpine AS stage-base
 
 WORKDIR /app
 
 # ----- DEPENDENCIES ------
 FROM stage-base AS stage-dependencies
-COPY package.json yarn.lock .yarnrc.yml ./
+
+COPY package.json  ./
+COPY yarn.lock ./
+COPY .yarnrc.yml ./
+COPY .env ./
+
 RUN corepack enable
 RUN yarn install
 
 # ----- BUILD ------
 FROM stage-dependencies AS stage-build
 
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
+COPY .swcrc ./
+
 RUN yarn build
 
 # ----- MAIN ------
