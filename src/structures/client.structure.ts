@@ -68,7 +68,7 @@ export class BotClient extends Client {
             if (this.team) this.team.update(team.teamInfo);
             else this.team = new Team(team.teamInfo);
         } else {
-            console.log("Failed to get team info");
+            Logger.warn("Failed to get team info");
         }
 
         const mapMarkers = await this.services.server.getMapMarkers();
