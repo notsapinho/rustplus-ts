@@ -3,6 +3,7 @@ import type { ClientOptions } from "@/lib/core";
 import { Client } from "@/lib/core";
 import { isValidAppResponse } from "@/lib/utils";
 import { Camera, Map, MapMarkers, ServerInfo, Team, Time } from "@/structures";
+import { Logger } from "@/utils";
 
 export class BotClient extends Client {
     public team: Team | null = null;
@@ -40,7 +41,7 @@ export class BotClient extends Client {
             if (isValidAppResponse(map)) {
                 this.map = new Map(map.map);
             } else {
-                console.log("Failed to get map");
+                Logger.warn("Failed to get map");
             }
         }
 
@@ -50,7 +51,7 @@ export class BotClient extends Client {
             if (this.time) this.time.update(time.time);
             else this.time = new Time(time.time);
         } else {
-            console.log("Failed to get time");
+            Logger.warn("Failed to get time");
         }
 
         const serverInfo = await this.services.server.getInfo();
@@ -59,7 +60,7 @@ export class BotClient extends Client {
             if (this.serverInfo) this.serverInfo.update(serverInfo.info);
             else this.serverInfo = new ServerInfo(serverInfo.info);
         } else {
-            console.log("Failed to get server info");
+            Logger.warn("Failed to get server info");
         }
 
         const team = await this.services.team.getInfo();
@@ -77,7 +78,7 @@ export class BotClient extends Client {
             if (this.mapMarkers) this.mapMarkers.update(mapMarkers.mapMarkers);
             else this.mapMarkers = new MapMarkers(mapMarkers.mapMarkers);
         } else {
-            console.log("Failed to get map markers");
+            Logger.warn("Failed to get map markers");
         }
     }
 
