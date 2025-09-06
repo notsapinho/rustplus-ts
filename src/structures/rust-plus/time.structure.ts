@@ -5,12 +5,16 @@ export class Time {
     public time: number;
     public sunrise: number;
     public sunset: number;
+    public dayLengthMinutes: number;
+    public timeScale: number;
 
     public constructor(appTime: AppTime) {
         this.startTime = appTime.time;
         this.time = appTime.time;
         this.sunrise = appTime.sunrise;
         this.sunset = appTime.sunset;
+        this.dayLengthMinutes = appTime.dayLengthMinutes;
+        this.timeScale = appTime.timeScale;
     }
 
     public get isDaytime() {
@@ -21,13 +25,17 @@ export class Time {
         return !this.isDaytime;
     }
 
-    public get timeUntilNighttime() {
+    public get realPerHour() {
+        return this.dayLengthMinutes / 24 / (this.timeScale || 1);
+    }
+
+    public get inGameTimeUntilNighttime() {
         if (this.isNighttime) return 0;
 
         return this.sunset - this.time;
     }
 
-    public get timeUntilDaytime() {
+    public get inGameTimeUntilDaytime() {
         if (this.isDaytime) return 0;
 
         return this.time > this.sunrise
@@ -39,5 +47,7 @@ export class Time {
         this.time = appTime.time;
         this.sunrise = appTime.sunrise;
         this.sunset = appTime.sunset;
+        this.dayLengthMinutes = appTime.dayLengthMinutes;
+        this.timeScale = appTime.timeScale;
     }
 }
