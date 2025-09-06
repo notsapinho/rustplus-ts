@@ -11,16 +11,13 @@ export class UtilCommand extends Command {
     }
 
     public override async run() {
-        if (!this.container.client.time) return;
-
         await this.container.client.services.team.sendMessage(
-            `Agora são ${decimalToHHMM(this.container.client.time.time)}. 
-            ${
+            `Agora são ${decimalToHHMM(this.container.client.time.time)} | ${
                 this.container.client.time.isDaytime
-                    ? `${decimalToHM(this.container.client.time.timeUntilNighttime)} até o anoitecer`
+                    ? `${decimalToHM(this.container.client.time.timeUntilNighttime)} até o anoitecer.`
                     : `${decimalToHM(
                           this.container.client.time.timeUntilDaytime
-                      )} até o amanhecer`
+                      )} até o amanhecer.`
             }`
         );
     }

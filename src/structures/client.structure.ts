@@ -13,7 +13,6 @@ export class BotClient extends Client {
     public map: Map | null = null;
 
     public connectedCamera: Camera | null = null;
-
     private poolInterval: NodeJS.Timeout | null = null;
 
     public constructor(options: ClientOptions) {

@@ -9,7 +9,7 @@ import { container } from "@sapphire/pieces";
 export const TeamEvent = {
     MemberAdd: "memberAdd",
     MemberLeft: "memberLeft",
-    MemberDied: "memberDied",
+    MemberDie: "memberDie",
     MemberRespawn: "memberRespawn",
     LeaderChange: "leaderChange",
     LeaderNoteAdd: "leaderNoteAdd",
@@ -90,7 +90,7 @@ export class Team {
             if (!newMember) {
                 container.client.emit(TeamEvent.MemberLeft, member);
             } else if (newMember && member.isAlive && !newMember.isAlive) {
-                container.client.emit(TeamEvent.MemberDied, member);
+                container.client.emit(TeamEvent.MemberDie, member);
             }
         }
 
@@ -103,7 +103,7 @@ declare module "@/lib/types/events.type" {
     interface ClientEvents {
         [TeamEvent.MemberAdd]: [member: AppTeamInfo_Member];
         [TeamEvent.MemberLeft]: [member: AppTeamInfo_Member];
-        [TeamEvent.MemberDied]: [member: AppTeamInfo_Member];
+        [TeamEvent.MemberDie]: [member: AppTeamInfo_Member];
         [TeamEvent.MemberRespawn]: [member: AppTeamInfo_Member];
         [TeamEvent.LeaderChange]: [
             oldNewLeaderSteamId: string,

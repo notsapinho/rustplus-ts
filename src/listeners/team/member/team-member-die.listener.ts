@@ -5,14 +5,18 @@ import { Listener } from "@/lib/structures/listener";
 import { TeamEvent } from "@/structures";
 import { Logger } from "@/utils";
 
-export class TeamListener extends Listener<typeof TeamEvent.MemberDied> {
+export class TeamListener extends Listener<typeof TeamEvent.MemberDie> {
     public constructor(context: ListenerContext) {
         super(context, {
-            event: TeamEvent.MemberDied
+            event: TeamEvent.MemberDie
         });
     }
 
     public override async run(member: AppTeamInfo_Member) {
         Logger.info(`Team member died: ${member.steamId}`);
+
+        await this.container.client.services.team.sendMessage(
+            `"${member.name}" foi de beise.`
+        );
     }
 }
