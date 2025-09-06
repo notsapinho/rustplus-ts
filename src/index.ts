@@ -5,8 +5,8 @@ import { BotClient } from "./structures/";
 const bootstrap = async () => {
     const client = new BotClient({
         server: {
-            ip: "2x.brasa.gg",
-            port: "28082"
+            ip: process.env.SERVER_IP,
+            port: process.env.SERVER_PORT
         },
         credentials: {
             playerId: process.env.PLAYER_ID,
