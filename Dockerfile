@@ -6,6 +6,7 @@ WORKDIR /app
 # ----- DEPENDENCIES ------
 FROM stage-base AS stage-dependencies
 
+COPY assets ./
 COPY package.json  ./
 COPY yarn.lock ./
 COPY .yarnrc.yml ./
