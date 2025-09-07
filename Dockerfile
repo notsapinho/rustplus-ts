@@ -17,7 +17,7 @@ RUN yarn install
 # ----- BUILD ------
 FROM stage-dependencies AS stage-build
 
-COPY assets/ ./
+COPY assets ./assets
 COPY tsconfig.json ./
 COPY src ./src
 COPY .swcrc ./
