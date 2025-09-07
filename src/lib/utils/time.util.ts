@@ -13,7 +13,7 @@ export function decimalToHM(time: number) {
 }
 
 export function minutesToMMSS(minutes: number): string {
-    const totalSeconds = Math.max(0, Math.round(minutes * 60));
+    const totalSeconds = Math.max(0, Math.floor(minutes * 60));
     const mm = Math.floor(totalSeconds / 60)
         .toString()
         .padStart(2, "0");
