@@ -14,10 +14,12 @@ import { AppMessage, AppRequest } from "../interfaces/rustplus";
 
 import "./services/_load";
 import "./listeners/_load";
+import "./arguments/_load";
 
 import type { Plugin } from "../structures/plugins";
 
-import { CommandStore } from "../structures/command/stores";
+import { ArgumentStore } from "../structures/argument";
+import { CommandStore } from "../structures/command";
 import { ListenerStore } from "../structures/listener";
 import { PluginHook, PluginManager } from "../structures/plugins";
 import { Services, ServiceStore } from "../structures/service";
@@ -77,6 +79,7 @@ export class Client extends EventEmitter<ClientEvents> {
 
         this.stores //
             .register(new ServiceStore())
+            .register(new ArgumentStore())
             .register(
                 new ListenerStore().registerPath(
                     resolve(__dirname, "..", "..", "listeners")
@@ -408,5 +411,6 @@ declare module "@sapphire/pieces" {
         listeners: ListenerStore;
         services: ServiceStore;
         commands: CommandStore;
+        arguments: ArgumentStore;
     }
 }

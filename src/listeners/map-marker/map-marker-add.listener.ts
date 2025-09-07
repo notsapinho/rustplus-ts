@@ -39,7 +39,7 @@ export class MapMarkerListener extends Listener<
 
         // TODO: Add position
         await this.container.client.services.team.sendMessage(
-            "O Cargo spawnou no mapa."
+            "Cargo just spawned!"
         );
 
         Logger.info("Cargo ship spawned");
@@ -65,17 +65,17 @@ export class MapMarkerListener extends Listener<
 
             const rigName =
                 rig.token === MonumentTokens.SMALL_OIL_RIG
-                    ? "Oil Rig Pequena"
-                    : "Oil Rig Grande";
+                    ? "Small Oil Rig"
+                    : "Large Oil Rig";
 
             await this.container.client.services.team.sendMessage(
-                `A caixa da "${rigName}" acabou de ser acionada!`
+                `${rigName} was just called!`
             );
 
             //TODO: Use scheduled tasks or similar
             setTimeout(async () => {
                 await this.container.client.services.team.sendMessage(
-                    `A caixa da "${rigName}" destrancou!`
+                    `The crate at ${rigName} has been unlocked!`
                 );
 
                 Logger.info(`Crate unlocked at ${rigName}`);

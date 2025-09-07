@@ -35,7 +35,7 @@ export class MapMarkerListener extends Listener<
         this.container.client.mapMarkers.cargo = null;
 
         await this.container.client.services.team.sendMessage(
-            "O Cargo saiu do mapa."
+            "Cargo just despawned!"
         );
 
         Logger.info("Cargo ship despawned");
@@ -50,7 +50,7 @@ export class MapMarkerListener extends Listener<
             )
         ) {
             await this.container.client.services.team.sendMessage(
-                "O Patrol saiu do mapa."
+                "Patrol despawned."
             );
         } else {
             const grid = getGridLabelByXY(
@@ -60,7 +60,7 @@ export class MapMarkerListener extends Listener<
             );
 
             await this.container.client.services.team.sendMessage(
-                `O Patrol foi derrubado perto do ${grid}.`
+                `Patrol got shot down @ ${grid}!`
             );
         }
     }

@@ -1,5 +1,10 @@
-import type { AppMessage, AppRequest } from "@/lib/interfaces/rustplus";
-import type { Listener } from "../structures";
+import type {
+    AppMessage,
+    AppRequest,
+    AppTeamMessage
+} from "@/lib/interfaces/rustplus";
+import type { Command } from "../structures/command";
+import type { Listener } from "../structures/listener";
 
 export const Events = {
     Connecting: "connecting",
@@ -9,7 +14,10 @@ export const Events = {
     Disconnected: "disconnected",
     Error: "error",
 
-    ListenerError: "listenerError"
+    ListenerError: "listenerError",
+    CommandError: "commandError",
+    CommandRun: "commandRun",
+    CommandSuccess: "commandSuccess"
 } as const;
 
 export interface ClientEvents {
@@ -21,4 +29,10 @@ export interface ClientEvents {
     [Events.Error]: [error: Error];
 
     [Events.ListenerError]: [error: unknown, context: { piece: Listener }];
+    [Events.CommandError]: [error: unknown, context: { piece: Command }];
+    [Events.CommandRun]: [message: AppTeamMessage, context: { piece: Command }];
+    [Events.CommandSuccess]: [
+        message: AppTeamMessage,
+        context: { piece: Command }
+    ];
 }

@@ -17,7 +17,7 @@ export class TeamListener extends Listener<typeof TeamEvent.MemberRespawn> {
         Logger.info(`Team member respawned: ${member.steamId}`);
 
         await this.container.client.services.team.sendMessage(
-            `"${member.name}" voltou à vida no ${getGridLabelByXY(
+            `"${member.name}" respawned @ ${getGridLabelByXY(
                 member.x,
                 member.y,
                 this.container.client.serverInfo.mapSize

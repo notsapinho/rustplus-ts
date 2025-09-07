@@ -59,6 +59,7 @@ export class TeamService extends Service {
         const result = await this.container.client.consumeTokens(
             TeamServiceCosts.sendTeamMessage
         );
+
         if (result !== ConsumeTokensError.NoError) return result;
 
         const appResponse = await this.container.client.sendRequestAsync(

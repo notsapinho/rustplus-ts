@@ -17,7 +17,7 @@ export class TeamListener extends Listener<typeof TeamEvent.MemberDie> {
         Logger.info(`Team member died: ${member.steamId}`);
 
         await this.container.client.services.team.sendMessage(
-            `"${member.name}" foi de beise no ${getGridLabelByXY(
+            `"${member.name}" died @ ${getGridLabelByXY(
                 member.x,
                 member.y,
                 this.container.client.serverInfo.mapSize

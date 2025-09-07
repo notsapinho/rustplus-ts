@@ -48,10 +48,10 @@ export class MapMarkerListener extends Listener<
             };
 
             await this.container.client.services.team.sendMessage(
-                `O Cargo entrou no porto do ${grid}.`
+                `Cargo just docked at ${grid}`
             );
 
-            Logger.info(`Cargo ship docked at ${grid}`);
+            Logger.info(`Cargo ship docked @ ${grid}`);
         } else if (
             !dockedAt &&
             this.container.client.mapMarkers.cargo?.dockedAt !== null
@@ -59,7 +59,7 @@ export class MapMarkerListener extends Listener<
             this.container.client.mapMarkers.cargo.dockedAt = null;
 
             await this.container.client.services.team.sendMessage(
-                `O Cargo saiu do porto.`
+                "Cargo just undocked!"
             );
 
             Logger.info("Cargo ship undocked");

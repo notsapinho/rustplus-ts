@@ -12,13 +12,13 @@ export class UtilCommand extends Command {
 
     public override async run() {
         await this.container.client.services.team.sendMessage(
-            `Agora são ${decimalToHHMM(this.container.client.time.time)} | ${
+            `It's now ${decimalToHHMM(this.container.client.time.time)} | ${
                 this.container.client.time.isDaytime
-                    ? `${minutesToMMSS(this.container.client.time.realPerHour * this.container.client.time.inGameTimeUntilNighttime)} até o anoitecer.`
+                    ? `${minutesToMMSS(this.container.client.time.realPerHour * this.container.client.time.inGameTimeUntilNighttime)} until nightfall.`
                     : `${minutesToMMSS(
                           this.container.client.time.realPerHour *
                               this.container.client.time.inGameTimeUntilDaytime
-                      )} até o amanhecer.`
+                      )} until daytime.`
             }`
         );
     }
