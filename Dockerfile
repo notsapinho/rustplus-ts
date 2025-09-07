@@ -6,7 +6,6 @@ WORKDIR /app
 # ----- DEPENDENCIES ------
 FROM stage-base AS stage-dependencies
 
-COPY assets ./
 COPY package.json  ./
 COPY yarn.lock ./
 COPY .yarnrc.yml ./
@@ -18,6 +17,7 @@ RUN yarn install
 # ----- BUILD ------
 FROM stage-dependencies AS stage-build
 
+COPY assets/ ./
 COPY tsconfig.json ./
 COPY src ./src
 COPY .swcrc ./
