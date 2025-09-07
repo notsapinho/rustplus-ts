@@ -8,6 +8,8 @@ export class Map {
     }
 
     public update(appMap: AppMap) {
+        if (!appMap.monuments) return;
+
         this.monuments = appMap.monuments;
     }
 }

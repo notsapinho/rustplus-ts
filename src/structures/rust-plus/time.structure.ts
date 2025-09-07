@@ -44,6 +44,8 @@ export class Time {
     }
 
     public update(appTime: AppTime) {
+        if (!appTime) return;
+
         this.time = appTime.time;
         this.sunrise = appTime.sunrise;
         this.sunset = appTime.sunset;

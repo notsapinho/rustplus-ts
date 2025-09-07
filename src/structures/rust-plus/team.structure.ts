@@ -29,6 +29,8 @@ export class Team {
     }
 
     public update(newInfo: AppTeamInfo) {
+        if (!newInfo) return;
+
         if (this.leaderSteamId !== newInfo.leaderSteamId) {
             const old = this.leaderSteamId;
 

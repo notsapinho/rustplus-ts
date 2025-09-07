@@ -56,6 +56,8 @@ export class MapMarkers {
     }
 
     public update(newAppMapMarkers: AppMapMarkers) {
+        if (!newAppMapMarkers) return;
+
         for (const newMarker of newAppMapMarkers.markers) {
             const oldMarker = this.markers.find((m) => m.id === newMarker.id);
 

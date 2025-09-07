@@ -10,6 +10,8 @@ export class ServerInfo {
     }
 
     public update(appInfo: AppInfo) {
+        if (!appInfo) return;
+
         this.mapSize = getCorrectedMapSize(appInfo.mapSize);
     }
 }
