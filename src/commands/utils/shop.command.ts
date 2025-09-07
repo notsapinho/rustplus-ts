@@ -2,11 +2,10 @@ import type { Args } from "@/lib/parsers/args.parser";
 import type { CommandContext } from "@/lib/structures/command";
 import type { Message } from "@/lib/types/message.type";
 
-import items from "assets/items.json";
-
 import { AppMarkerType } from "@/lib/interfaces/rustplus";
 import { Command } from "@/lib/structures/command";
 import { getGridLabelByXY, sleep } from "@/lib/utils";
+import items from "../../../assets/items.json";
 
 export class UtilCommand extends Command {
     public constructor(context: CommandContext) {
