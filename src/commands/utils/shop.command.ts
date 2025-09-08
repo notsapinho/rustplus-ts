@@ -50,20 +50,16 @@ export class UtilCommand extends Command {
         const shops = vendingShops
             .map((shop) => {
                 const sellOrders = shop.sellOrders
-                    .filter((sellOrder) => {
-                        if (action === "buy") {
-                            return sellOrder.itemId === item.itemid;
-                        } else {
-                            return sellOrder.currencyId === item.itemid;
-                        }
-                    })
-                    .sort((a, b) => {
-                        if (action === "buy") {
-                            return a.costPerItem - b.costPerItem;
-                        } else {
-                            return b.quantity - a.quantity;
-                        }
-                    });
+                    .filter((sellOrder) =>
+                        sellOrder.amountInStock > 0 && action === "buy"
+                            ? sellOrder.itemId === item.itemid
+                            : sellOrder.currencyId === item.itemid
+                    )
+                    .sort((a, b) =>
+                        action === "buy"
+                            ? a.costPerItem - b.costPerItem
+                            : b.quantity - a.quantity
+                    );
 
                 return {
                     shop,
