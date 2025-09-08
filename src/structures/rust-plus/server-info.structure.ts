@@ -1,6 +1,7 @@
 import type { AppInfo } from "@/lib/interfaces/rustplus";
 
 import { getCorrectedMapSize } from "@/lib/utils";
+import { Logger } from "@/utils";
 
 export class ServerInfo {
     public mapSize: number;
@@ -10,7 +11,10 @@ export class ServerInfo {
     }
 
     public update(appInfo: AppInfo) {
-        if (!appInfo) return;
+        if (!appInfo) {
+            Logger.warn("Received invalid server info update from app.");
+            return;
+        }
 
         this.mapSize = getCorrectedMapSize(appInfo.mapSize);
     }

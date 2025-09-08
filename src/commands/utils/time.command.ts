@@ -14,10 +14,9 @@ export class UtilCommand extends Command {
         await this.container.client.services.team.sendMessage(
             `It's now ${decimalToHHMM(this.container.client.time.time)} | ${
                 this.container.client.time.isDaytime
-                    ? `${minutesToMMSS(this.container.client.time.realPerHour * this.container.client.time.inGameTimeUntilNighttime)} until nightfall.`
+                    ? `${minutesToMMSS(this.container.client.time.realUntilNightfall())} until nightfall.`
                     : `${minutesToMMSS(
-                          this.container.client.time.realPerHour *
-                              this.container.client.time.inGameTimeUntilDaytime
+                          this.container.client.time.realUntilDaytime()
                       )} until daytime.`
             }`
         );

@@ -6,6 +6,8 @@ import type {
 
 import { container } from "@sapphire/pieces";
 
+import { Logger } from "@/utils";
+
 export const TeamEvent = {
     MemberAdd: "memberAdd",
     MemberLeft: "memberLeft",
@@ -29,7 +31,11 @@ export class Team {
     }
 
     public update(newInfo: AppTeamInfo) {
-        if (!newInfo) return;
+        if (!newInfo) {
+            Logger.warn("Received invalid team update from app.");
+
+            return;
+        }
 
         if (this.leaderSteamId !== newInfo.leaderSteamId) {
             const old = this.leaderSteamId;

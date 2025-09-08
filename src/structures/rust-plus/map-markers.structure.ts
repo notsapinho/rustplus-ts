@@ -8,6 +8,7 @@ import { container } from "@sapphire/pieces";
 
 import { AppMarkerType } from "@/lib/interfaces/rustplus";
 import { Constants, getDistanceBetween, MonumentTokens } from "@/lib/utils";
+import { Logger } from "@/utils";
 
 export const MapMarkersEvent = {
     MarkerAdd: "markerAdd",
@@ -56,7 +57,11 @@ export class MapMarkers {
     }
 
     public update(newAppMapMarkers: AppMapMarkers) {
-        if (!newAppMapMarkers) return;
+        if (!newAppMapMarkers) {
+            Logger.warn("Received invalid map markers update from app.");
+
+            return;
+        }
 
         for (const newMarker of newAppMapMarkers.markers) {
             const oldMarker = this.markers.find((m) => m.id === newMarker.id);

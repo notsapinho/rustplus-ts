@@ -1,5 +1,7 @@
 import type { AppMap, AppMap_Monument } from "@/lib/interfaces/rustplus";
 
+import { Logger } from "@/utils";
+
 export class Map {
     public monuments: AppMap_Monument[] = [];
 
@@ -8,7 +10,10 @@ export class Map {
     }
 
     public update(appMap: AppMap) {
-        if (!appMap.monuments) return;
+        if (!appMap) {
+            Logger.warn("Received invalid map update from app.");
+            return;
+        }
 
         this.monuments = appMap.monuments;
     }

@@ -26,7 +26,7 @@ export class BotClient extends Client {
 
         this.poolInterval = setInterval(() => {
             void this.pool();
-        }, 5000);
+        }, 10000);
     }
 
     private async pool() {
