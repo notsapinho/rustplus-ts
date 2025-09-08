@@ -10,6 +10,8 @@ export class ClientListener extends Listener<typeof Events.Disconnected> {
     }
 
     public async run() {
+        this.container.client.clearPoolInterval();
+
         Logger.warn(
             "Disconnected from Rust+ server, attempting to reconnect..."
         );

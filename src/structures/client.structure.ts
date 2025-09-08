@@ -29,6 +29,13 @@ export class BotClient extends Client {
         }, 10000);
     }
 
+    public clearPoolInterval() {
+        if (this.poolInterval) {
+            clearInterval(this.poolInterval);
+            this.poolInterval = null;
+        }
+    }
+
     private async pool() {
         if (!this.isConnected) {
             throw new Error("Client is not connected.");
@@ -109,5 +116,6 @@ declare module "@/lib/core" {
         map: Map | null;
         connectedCamera: Camera | null;
         startPoolInterval(): Promise<void>;
+        clearPoolInterval(): void;
     }
 }
