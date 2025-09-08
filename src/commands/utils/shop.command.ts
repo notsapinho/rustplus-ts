@@ -70,7 +70,7 @@ export class UtilCommand extends Command {
 
         if (shops.length === 0) {
             await this.container.client.services.team.sendMessage(
-                `No shops were found that ${action === "buy" ? "selling" : "buying"} "${
+                `No shops were found that are ${action === "buy" ? "selling" : "buying"} "${
                     item.Name
                 }".`
             );
