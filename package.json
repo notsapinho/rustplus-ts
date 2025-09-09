@@ -1,7 +1,7 @@
 {
     "name": "rustplus-ts",
-    "version": "0.0.10",
-    "description": "Rust+ API Wrapper written in TypeScript for the game Rust.",
+    "version": "0.0.11",
+    "description": "Rust+ Bot written in TypeScript for the game Rust.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "files": [
