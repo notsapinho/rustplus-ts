@@ -12,6 +12,10 @@ export class ClientListener extends Listener<typeof Events.Connected> {
     public async run() {
         Logger.info("Connected to the server");
 
+        this.container.client.clearReconnectInterval();
+        this.container.client.startReconnectInterval();
+
+        this.container.client.clearPoolInterval();
         await this.container.client.startPoolInterval();
     }
 }

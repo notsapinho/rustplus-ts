@@ -14,9 +14,34 @@ export class BotClient extends Client {
 
     public connectedCamera: Camera | null = null;
     private poolInterval: NodeJS.Timeout | null = null;
+    private reconnectInterval: NodeJS.Timeout | null = null;
 
     public constructor(options: ClientOptions) {
         super(options);
+    }
+
+    public async startReconnectInterval() {
+        if (this.reconnectInterval) return;
+
+        this.reconnectInterval = setInterval(
+            async () => {
+                Logger.info("Attempting to reconnect...");
+
+                try {
+                    await this.connect();
+                } catch (error) {
+                    Logger.error("Reconnection attempt failed:", error);
+                }
+            },
+            60 * 1000 * 60
+        );
+    }
+
+    public clearReconnectInterval() {
+        if (this.reconnectInterval) {
+            clearInterval(this.reconnectInterval);
+            this.reconnectInterval = null;
+        }
     }
 
     public async startPoolInterval() {
@@ -117,5 +142,8 @@ declare module "@/lib/core" {
         connectedCamera: Camera | null;
         startPoolInterval(): Promise<void>;
         clearPoolInterval(): void;
+        startReconnectInterval(): void;
+        clearReconnectInterval(): void;
+        connectToCamera(identifier: string): Promise<Camera | null>;
     }
 }

@@ -3,7 +3,7 @@
     "module": {
         "type": "commonjs"
     },
-    "sourceMaps": false,
+    "sourceMaps": true,
     "jsc": {
         "externalHelpers": false,
         "parser": {
